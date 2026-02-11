@@ -1,0 +1,74 @@
+{
+  "final_results": [
+    {
+      "title": "CVE-2017-10271 Technical Report",
+      "content": "This vulnerability affects WebLogic through XMLDecoder. Detailed analysis with mitigation strategies...",
+      "score": 0.75,
+      "source": "nist"
+    },
+    {
+      "title": "WebLogic Setup Guide",
+      "content": "How to install and configure WebLogic Server...",
+      "score": 0.42,
+      "source": "docs"
+    },
+    {
+      "title": "XML Deserialization Attacks Overview",
+      "content": "General overview of deserialization vulnerabilities across platforms...",
+      "score": 0.55,
+      "source": "research"
+    }
+  ],
+  "reranked_results": [
+    {
+      "title": "CVE-2017-10271 Technical Report",
+      "content": "This vulnerability affects WebLogic through XMLDecoder. Detailed analysis with mitigation strategies...",
+      "score": 1.0,
+      "source": "nist"
+    },
+    {
+      "title": "WebLogic Setup Guide",
+      "content": "How to install and configure WebLogic Server...",
+      "score": 1.0,
+      "source": "docs"
+    },
+    {
+      "title": "XML Deserialization Attacks Overview",
+      "content": "General overview of deserialization vulnerabilities across platforms...",
+      "score": 1.0,
+      "source": "research"
+    }
+  ],
+  "total_iterations": 2,
+  "retrieval_history": [
+    {
+      "iteration": 1,
+      "query": "CVE-2017-10271",
+      "query_source": "original",
+      "num_results": 2,
+      "failure_detected": true,
+      "diagnoses": [
+        "query_drift",
+        "overly_general",
+        "terminology_mismatch",
+        "context_missing"
+      ],
+      "rewritten_queries": [
+        "CVE-2017-10271 payload",
+        "WebLogic vulnerability exploit payload",
+        "CVE-2017-10271 vulnerabilities exploitation techniques"
+      ]
+    },
+    {
+      "iteration": 2,
+      "query": "CVE-2017-10271 payload",
+      "query_source": "rewritten",
+      "num_results": 3,
+      "failure_detected": false,
+      "diagnoses": [],
+      "rewritten_queries": []
+    }
+  ],
+  "success": true,
+  "final_query": "CVE-2017-10271 payload"
+}

@@ -1,0 +1,57 @@
+# 爬虫系统基础依赖
+
+# Web界面
+Flask>=3.0.0
+flask-cors>=4.0.0
+
+# HTTP请求
+requests>=2.28.0
+
+# HTML解析
+beautifulsoup4>=4.11.0
+lxml>=4.9.0
+
+# RSS Feed解析
+feedparser>=6.0.10
+
+# 随机User-Agent
+fake-useragent>=1.2.0
+
+
+# 其他工具
+python-dateutil>=2.8.0
+trafilatura>=1.6.0
+
+# ATT&CK 知识库项目依赖
+
+# 基础库
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# STIX/TAXII 支持
+stix2>=3.0.0
+taxii2-client>=2.3.0
+
+# 数据处理
+python-dateutil>=2.8.0
+
+# 日志和进度条
+tqdm>=4.66.0
+
+# 语义去重所需的依赖库
+
+# Sentence Transformers - 用于生成文本embedding
+sentence-transformers>=2.2.0
+
+# HNSW库 - 用于高效的近邻搜索
+hnswlib>=0.7.0
+
+# NumPy - 数值计算
+numpy>=1.21.0
+
+# 如果使用GPU加速（可选）
+# torch>=2.0.0
+
+# 其他基础依赖（如果还没安装）
+requests>=2.28.0

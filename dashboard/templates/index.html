@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>爬虫管理系统 - Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/adaptive.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-brain"></i> Evo-Pentest 智能检索系统</h1>
+                <div class="header-info">
+                    <span class="status-badge" id="systemStatus">
+                        <i class="fas fa-circle"></i> System 2 Reflection 已就绪
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 左侧控制面板 -->
+            <aside class="sidebar">
+                <div class="card">
+                    <h2><i class="fas fa-cog"></i> 控制面板</h2>
+                    
+                    <!-- 爬虫配置 -->
+                    <div class="config-section">
+                        <h3>数据源选择</h3>
+                        <div id="crawlerList" class="crawler-list">
+                            <!-- 动态加载爬虫列表 -->
+                        </div>
+                    </div>
+
+                    <!-- 搜索参数 -->
+                    <div class="config-section">
+                        <h3>搜索参数</h3>
+                        <div class="form-group">
+                            <label for="queryInput">
+                                <i class="fas fa-search"></i> 关键词
+                            </label>
+                            <input type="text" id="queryInput" placeholder="输入搜索关键词..." value="渗透测试">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="maxPagesInput">
+                                <i class="fas fa-file-alt"></i> 最大页数
+                            </label>
+                            <input type="number" id="maxPagesInput" min="1" max="20" value="5">
+                        </div>
+                    </div>
+
+                    <!-- 操作按钮 -->
+                    <div class="action-buttons">
+                        <button id="startBtn" class="btn btn-primary">
+                            <i class="fas fa-play"></i> 开始爬取
+                        </button>
+                        <button id="stopBtn" class="btn btn-danger" disabled>
+                            <i class="fas fa-stop"></i> 停止爬取
+                        </button>
+                    </div>
+
+                    <!-- 快捷操作 -->
+                    <div class="quick-actions">
+                        <h3>快捷操作</h3>
+                        <button id="selectAllBtn" class="btn btn-small">
+                            <i class="fas fa-check-double"></i> 全选
+                        </button>
+                        <button id="clearLogsBtn" class="btn btn-small">
+                            <i class="fas fa-trash"></i> 清空日志
+                        </button>
+                        <button id="refreshBtn" class="btn btn-small">
+                            <i class="fas fa-sync"></i> 刷新状态
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 系统信息 -->
+                <div class="card">
+                    <h3><i class="fas fa-info-circle"></i> 系统信息</h3>
+                    <div class="system-info" id="systemInfo">
+                        <p><strong>已注册爬虫:</strong> <span id="crawlerCount">0</span></p>
+                        <p><strong>当前状态:</strong> <span id="currentStatus">空闲</span></p>
+                        <p><strong>总计爬取:</strong> <span id="totalResults">0</span> 条</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 右侧内容区 -->
+            <main class="content">
+                <!-- Tab导航 -->
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="adaptive">
+                        <i class="fas fa-brain"></i> 智能检索
+                    </button>
+                    <button class="tab-btn" data-tab="hindsight">
+                        <i class="fas fa-history"></i> Hindsight 回合数据
+                    </button>
+                    <button class="tab-btn" data-tab="training">
+                        <i class="fas fa-microchip"></i> 模型进化训练
+                    </button>
+                    <button class="tab-btn" data-tab="progress">
+                        <i class="fas fa-chart-line"></i> 进度监控
+                    </button>
+                    <button class="tab-btn" data-tab="logs">
+                        <i class="fas fa-terminal"></i> 实时日志
+                    </button>
+                    <button class="tab-btn" data-tab="results">
+                        <i class="fas fa-database"></i> 爬取结果
+                    </button>
+                    <button class="tab-btn" data-tab="files">
+                        <i class="fas fa-folder-open"></i> 文件管理
+                    </button>
+                </div>
+
+                <!-- Tab内容 -->
+                <div class="tab-content">
+                    <!-- 智能检索面板 -->
+                    <div class="tab-panel active" id="adaptive-panel">
+                        <!-- 检索控制 -->
+                        <div class="card">
+                            <h2><i class="fas fa-brain"></i> System 2 Reflection - 自适应检索</h2>
+                            <div class="adaptive-search-control">
+                                <div class="form-group">
+                                    <label for="adaptiveQuery">
+                                        <i class="fas fa-search"></i> 检索查询
+                                    </label>
+                                    <input type="text" id="adaptiveQuery" placeholder="例如: CVE-2017-10271 漏洞利用" value="SQL注入攻击">
+                                </div>
+                                <div class="form-group">
+                                    <label for="maxIterations">
+                                        <i class="fas fa-redo"></i> 最大迭代次数
+                                    </label>
+                                    <select id="maxIterations">
+                                        <option value="1">1次</option>
+                                        <option value="2">2次</option>
+                                        <option value="3" selected>3次</option>
+                                    </select>
+                                </div>
+                                <button id="startAdaptiveBtn" class="btn btn-primary btn-glow">
+                                    <i class="fas fa-rocket"></i> 启动智能检索
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 流程可视化 -->
+                        <div class="card workflow-card">
+                            <h2><i class="fas fa-project-diagram"></i> 检索流程可视化</h2>
+                            <div id="workflowViz" class="workflow-container">
+                                <div class="workflow-placeholder">
+                                    <i class="fas fa-lightbulb"></i>
+                                    <p>点击"启动智能检索"开始可视化展示</p>
+                                    <small>系统将自动检测、诊断、重写查询以获得最佳结果</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 迭代历史 -->
+                        <div class="card">
+                            <h2><i class="fas fa-history"></i> 迭代历史追踪</h2>
+                            <div id="iterationHistory" class="iteration-container">
+                                <!-- 动态生成 -->
+                            </div>
+                        </div>
+
+                        <!-- 最终结果 -->
+                        <div class="card">
+                            <div class="card-header-with-actions">
+                                <h2><i class="fas fa-trophy"></i> 检索结果 & 效用评分</h2>
+                                <button id="pushToRagflowBtn" class="btn btn-secondary btn-sm" style="display:none;">
+                                    <i class="fas fa-cloud-upload-alt"></i> 总结经验并推送至 RAGFlow
+                                </button>
+                            </div>
+                            <div id="finalResults" class="results-container">
+                                <div class="empty-state">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>暂无结果</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hindsight 回合数据面板 -->
+                    <div class="tab-panel" id="hindsight-panel">
+                        <div class="card">
+                            <h2><i class="fas fa-microchip"></i> Step 1: Hindsight Experience Replay (HER) 数据引擎</h2>
+                            <p class="description">
+                                系统自动分析历史攻击日志，提取导致"成功(Success)"的关键检索行为，并将其标记为正样本。
+                            </p>
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <span class="stat-label">已处理日志</span>
+                                    <span class="stat-value" id="hindsightLogCount">0</span>
+                                </div>
+                                <div class="stat-card">
+                                    <span class="stat-label">总计训练样本</span>
+                                    <span class="stat-value text-primary" id="hindsightSampleCount">0</span>
+                                </div>
+                                <div class="stat-card">
+                                    <span class="stat-label">最后运行时间</span>
+                                    <span class="stat-value" id="hindsightLastRun">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h2><i class="fas fa-list"></i> 提取的训练样本 (HER Samples)</h2>
+                            <div class="table-container">
+                                <table class="file-table">
+                                    <thead>
+                                        <tr>
+                                            <th>查询 (Query)</th>
+                                            <th>匹配分数 (Rel)</th>
+                                            <th>标签 (Label)</th>
+                                            <th>攻击上下文</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="hindsightSamplesTable">
+                                        <!-- 动态加载 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 模型进化训练面板 -->
+                    <div class="tab-panel" id="training-panel">
+                        <div class="card">
+                            <h2><i class="fas fa-microchip"></i> System Evolution - 模型进化训练</h2>
+                            <p class="description">
+                                基于 Hindsight Experience Replay (HER) 标注的数据，自动训练 Cross-Encoder 重排序模型，实现检索系统的自我进化。
+                            </p>
+                            
+                            <div class="training-control" style="margin-bottom: 20px;">
+                                <button id="startTrainingBtn" class="btn btn-primary btn-glow">
+                                    <i class="fas fa-sync-alt"></i> 开始全流程训练 (标注 + 训练)
+                                </button>
+                            </div>
+
+                            <div id="trainingStatusContainer" class="training-status-container" style="display:none; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 8px;">
+                                <div class="status-header" style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                    <span id="trainingPhase" style="font-weight: bold;">准备中...</span>
+                                    <span id="trainingProgressText">0%</span>
+                                </div>
+                                <div class="progress-bar" style="height: 10px; background: #eee; border-radius: 5px; overflow: hidden; margin-bottom: 10px;">
+                                    <div id="trainingProgressBar" class="progress-fill" style="width: 0%; height: 100%; background: #3498db; transition: width 0.3s;"></div>
+                                </div>
+                                <div id="trainingMessage" class="status-message" style="font-size: 0.9em; color: #666;">等待启动...</div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h2><i class="fas fa-terminal"></i> 训练实时日志</h2>
+                            <div id="trainingLogs" class="terminal-log" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; font-family: 'Consolas', monospace; height: 300px; overflow-y: auto; font-size: 0.85em; line-height: 1.5;">
+                                <div>[SYSTEM] 训练系统就绪。</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 进度监控 -->
+                    <div class="tab-panel" id="progress-panel">
+                        <div class="card">
+                            <h2><i class="fas fa-tasks"></i> 爬取进度</h2>
+                            <div id="progressContainer">
+                                <div class="empty-state">
+                                    <i class="fas fa-clock"></i>
+                                    <p>暂无运行中的任务</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 统计图表 -->
+                        <div class="card">
+                            <h2><i class="fas fa-chart-bar"></i> 数据统计</h2>
+                            <div id="statsContainer" class="stats-grid">
+                                <!-- 动态加载统计卡片 -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 实时日志 -->
+                    <div class="tab-panel" id="logs-panel">
+                        <div class="card">
+                            <h2><i class="fas fa-terminal"></i> 系统日志</h2>
+                            <div class="log-container" id="logContainer">
+                                <div class="log-entry log-info">
+                                    <span class="log-time">2026-01-01 00:00:00</span>
+                                    <span class="log-level">INFO</span>
+                                    <span class="log-source">system</span>
+                                    <span class="log-message">系统启动完成</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 爬取结果 -->
+                    <div class="tab-panel" id="results-panel">
+                        <div class="card">
+                            <h2><i class="fas fa-database"></i> 当前结果</h2>
+                            <div id="resultsContainer">
+                                <div class="empty-state">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>暂无结果数据</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 文件管理 -->
+                    <div class="tab-panel" id="files-panel">
+                        <div class="card">
+                            <h2><i class="fas fa-folder-open"></i> 已保存文件</h2>
+                            <div class="table-container">
+                                <table class="file-table" id="fileTable">
+                                    <thead>
+                                        <tr>
+                                            <th>文件名</th>
+                                            <th>数据源</th>
+                                            <th>大小</th>
+                                            <th>修改时间</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- 动态加载文件列表 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- 页脚 -->
+        <footer class="footer">
+            <p>© 2026 多源爬虫管理系统 | 最后更新: <span id="lastUpdate">--</span></p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/adaptive.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/training.js') }}"></script>
+</body>
+</html>

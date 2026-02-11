@@ -1,0 +1,508 @@
+/* ========================================
+   智能检索系统 - 高科技可视化样式
+   System 2 Reflection Visualization
+   ======================================== */
+
+/* 全局科技感动画 */
+@keyframes neon-pulse {
+    0%, 100% { 
+        box-shadow: 0 0 5px rgba(0, 255, 255, 0.3),
+                    0 0 10px rgba(0, 255, 255, 0.2),
+                    0 0 15px rgba(0, 255, 255, 0.1);
+    }
+    50% { 
+        box-shadow: 0 0 10px rgba(0, 255, 255, 0.5),
+                    0 0 20px rgba(0, 255, 255, 0.3),
+                    0 0 30px rgba(0, 255, 255, 0.2);
+    }
+}
+
+@keyframes gradient-shift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+@keyframes slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse-glow {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.3); }
+}
+
+/* 检索控制区域 */
+.adaptive-search-control {
+    display: grid;
+    grid-template-columns: 1fr 200px auto;
+    gap: 15px;
+    align-items: end;
+    padding: 20px;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+.adaptive-search-control .form-group {
+    margin-bottom: 0;
+}
+
+.adaptive-search-control label {
+    color: #fff;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.adaptive-search-control input,
+.adaptive-search-control select {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.adaptive-search-control input:focus,
+.adaptive-search-control select:focus {
+    outline: none;
+    border-color: #00ffff;
+    background: rgba(255, 255, 255, 0.15);
+    animation: neon-pulse 2s infinite;
+}
+
+.btn-glow {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background-size: 200% 200%;
+    animation: gradient-shift 3s ease infinite;
+    border: none;
+    color: white;
+    padding: 12px 30px;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.btn-glow:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-glow:active {
+    transform: scale(0.98);
+}
+
+/* 工作流可视化容器 */
+.workflow-card {
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    color: #fff;
+}
+
+.workflow-container {
+    min-height: 400px;
+    position: relative;
+    padding: 30px;
+}
+
+.workflow-placeholder {
+    text-align: center;
+    padding: 80px 20px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.workflow-placeholder i {
+    font-size: 64px;
+    margin-bottom: 20px;
+    color: #00ffff;
+    animation: pulse-glow 2s infinite;
+}
+
+.workflow-placeholder p {
+    font-size: 18px;
+    margin-bottom: 10px;
+}
+
+.workflow-placeholder small {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* 流程步骤可视化 */
+.workflow-steps {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    margin: 40px 0;
+}
+
+.workflow-step {
+    flex: 1;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+    animation: slide-in 0.5s ease forwards;
+    opacity: 0;
+}
+
+.workflow-step.active {
+    animation: slide-in 0.5s ease forwards;
+}
+
+.workflow-step-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 15px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+.workflow-step.active .workflow-step-icon {
+    animation: neon-pulse 1.5s infinite;
+    transform: scale(1.1);
+}
+
+.workflow-step.success .workflow-step-icon {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+
+.workflow-step.failure .workflow-step-icon {
+    background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+}
+
+.workflow-step-label {
+    font-weight: 600;
+    font-size: 14px;
+    color: #00ffff;
+    margin-bottom: 5px;
+}
+
+.workflow-step-desc {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* 连接线 */
+.workflow-connector {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, 
+        rgba(102, 126, 234, 0.3) 0%, 
+        rgba(118, 75, 162, 0.3) 100%);
+    z-index: 1;
+}
+
+.workflow-connector-progress {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    width: 0%;
+    transition: width 0.5s ease;
+}
+
+/* 迭代历史卡片 */
+.iteration-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.iteration-card {
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    border-radius: 12px;
+    padding: 20px;
+    border-left: 4px solid #00ffff;
+    animation: slide-in 0.5s ease forwards;
+    transition: all 0.3s ease;
+}
+
+.iteration-card:hover {
+    transform: translateX(5px);
+    box-shadow: 0 5px 20px rgba(0, 255, 255, 0.3);
+}
+
+.iteration-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.iteration-number {
+    background: rgba(0, 255, 255, 0.2);
+    color: #00ffff;
+    padding: 5px 15px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.iteration-status {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.iteration-status.success {
+    background: rgba(56, 239, 125, 0.2);
+    color: #38ef7d;
+}
+
+.iteration-status.failed {
+    background: rgba(244, 92, 67, 0.2);
+    color: #f45c43;
+}
+
+.iteration-query {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-family: 'Courier New', monospace;
+    color: #00ffff;
+    font-size: 14px;
+}
+
+.diagnosis-section {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 10px;
+}
+
+.diagnosis-label {
+    color: #ffa500;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.diagnosis-content {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.rewritten-queries {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.rewritten-query {
+    background: rgba(102, 126, 234, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.5);
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-size: 12px;
+    color: #667eea;
+    transition: all 0.3s ease;
+}
+
+.rewritten-query:hover {
+    background: rgba(102, 126, 234, 0.3);
+    transform: scale(1.05);
+}
+
+/* 结果展示 */
+.results-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.result-item {
+    background: linear-gradient(135deg, rgba(30, 60, 114, 0.6) 0%, rgba(42, 82, 152, 0.6) 100%);
+    border-radius: 10px;
+    padding: 20px;
+    border-left: 4px solid transparent;
+    animation: slide-in 0.5s ease forwards;
+    transition: all 0.3s ease;
+}
+
+.result-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.result-id {
+    font-weight: 600;
+    color: #00ffff;
+}
+
+.utility-score {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.score-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.score-value {
+    font-size: 18px;
+    font-weight: 700;
+    padding: 5px 15px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.score-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.score-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%);
+    border-radius: 4px;
+    transition: width 1s ease;
+}
+
+.result-content {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-top: 10px;
+}
+
+/* 评分等级颜色 */
+.result-item[data-score-level="high"] {
+    border-left-color: #38ef7d;
+}
+
+.result-item[data-score-level="medium"] {
+    border-left-color: #ffa500;
+}
+
+.result-item[data-score-level="low"] {
+    border-left-color: #f45c43;
+}
+
+/* 加载动画 */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #00ffff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 60px;
+}
+
+.loading-text {
+    color: #00ffff;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* 统计信息显示 */
+.stats-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #00ffff;
+    display: block;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-top: 5px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .adaptive-search-control {
+        grid-template-columns: 1fr;
+    }
+    
+    .workflow-steps {
+        flex-direction: column;
+        gap: 30px;
+    }
+    
+    .workflow-connector {
+        display: none;
+    }
+    
+    .stats-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* 空状态优化 */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.empty-state i {
+    font-size: 48px;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
