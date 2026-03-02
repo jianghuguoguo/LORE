@@ -1,0 +1,128 @@
+# RefPenTest Layer 0 Configuration
+# 配置说明：此文件控制 Layer 0 日志标准化层的行为
+# 设计原则：所有工具名通过配置指定，避免硬编码，支持新工具自动归入正确分类
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. 工具分类配置（Layer 0 分类依据，见技术方案 六.Layer0 Step2.2.3）
+# ─────────────────────────────────────────────────────────────────────────────
+tool_categories:
+  # RAG 知识检索工具名列表（识别为 RAG_QUERY 事件）
+  rag_tool_names:
+    - make_kb_search
+
+  # 代码写入/执行工具名列表（识别为 CODE_WRITE 事件）
+  code_execute_tool_names:
+    - execute_code
+
+  # 通用命令执行工具名列表（识别为 GENERIC_COMMAND_CALL 事件）
+  generic_command_tool_names:
+    - generic_linux_command
+
+  # 其余所有 tool_name 自动归入 STRUCTURED_TOOL_CALL，无需在此枚举
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. RAG 时间窗口配置（has_rag_context 标注，见技术方案 六.Layer0 Step2.2.4）
+# ─────────────────────────────────────────────────────────────────────────────
+rag_context:
+  # has_rag_context=true 的时间窗口大小（向前 N 个 Turn 内是否有 RAG 调用）
+  window_turns: 3
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. 日志文件配置
+# ─────────────────────────────────────────────────────────────────────────────
+logging:
+  # 日志目录（相对于项目根目录）
+  log_dir: "../logs"
+  # 处理后数据输出目录
+  output_dir: "../data/processed"
+  # 日志文件格式标识（用于文件名 glob 匹配）
+  log_glob: "cai_*.jsonl"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. 解析行为配置
+# ─────────────────────────────────────────────────────────────────────────────
+parser:
+  # API 请求对象识别：没有 event 字段且没有 object 字段（或 object 为空字符串）
+  api_request_marker: "UNKNOWN"
+  # Chat completion 对象识别
+  completion_object_value: "chat.completion"
+  # 工具结果提取：role=tool 消息中 content 的外层格式
+  # 实际日志格式：content = JSON string of {"type": "text", "text": "<inner_json>"}
+  tool_result_content_type: "text_wrapper"  # "text_wrapper" | "direct"
+  # 渗透目标提取：从哪些事件的哪些字段中尝试提取目标信息
+  target_extraction:
+    event_types: ["user_message"]
+    max_scan_lines: 10  # 只扫描前 N 条 user_message
+    target_keywords: ["渗透测试目标", "target", "Target", "http://", "https://", "IP:", "ip:"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. 输出配置
+# ─────────────────────────────────────────────────────────────────────────────
+output:
+  # 序列化格式
+  format: "jsonl"
+  # 是否在输出中保留原始 log 对象（便于调试，生产环境可关闭）
+  include_raw_records: false
+  # 每个 Turn 的 events 是否展开为独立顶层记录（否则嵌套在 Turn 对象内）
+  flatten_events: false
+  # 输出文件名模板，{session_id} 会被替换
+  filename_template: "layer0_{session_id}.jsonl"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. LLM 配置（Phase 3：集成 LLM 进行语义理解）
+# ─────────────────────────────────────────────────────────────────────────────
+# 设计原则：
+#   - provider 字段仅作标识，不影响实际调用（openai SDK base_url 注入实现多厂商）
+#   - api_key 优先级：环境变量 api_key_env > 配置文件 api_key_literal
+#   - 切换模型只需修改 model / base_url，其余调用代码无需改动
+# ─────────────────────────────────────────────────────────────────────────────
+llm:
+  # 提供商标识（仅作标签，不影响调用逻辑）
+  # 支持任意 OpenAI 兼容接口：deepseek / openai / azure / ollama / qwen / zhipu 等
+  provider: "generic"
+
+  # 模型名称（传入 API 的 model 参数）
+  model: "deepseek-chat"
+
+  # API Base URL（OpenAI 兼容格式；OpenAI 官方请留空）
+  base_url: "https://api.deepseek.com"
+
+  # API Key 来源（优先级：环境变量 > api_key_literal）
+  # 建议生产环境通过环境变量注入，不要将密钥提交到版本控制
+  api_key_env: "LLM_API_KEY"
+  api_key_literal: "sk-6bd4ea2482004f44bef2a842a4badc06"
+
+  # 生成参数
+  temperature: 0.0         # 0.0 = 确定性输出，适合结构化标注任务
+  max_tokens: 2048         # 单次 LLM 调用最大输出 token 数
+
+  # 重试与超时（网络抖动自动重试）
+  max_retries: 3           # LLM 调用失败时最大重试次数（指数退避）
+  retry_delay: 2.0         # 首次重试等待秒数（后续 2x 增长）
+  timeout: 60              # 单次 HTTP 请求超时（秒）
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Layer 4 配置：知识库主动维护层
+# ─────────────────────────────────────────────────────────────────────────────
+layer4:
+  enabled: true
+
+  # 爬虫行为控制
+  crawler:
+    # 使用的数据源（与 main_crawler --sources 对应）
+    sources: [csdn, github, xianzhi, qianxin]
+    # 每个关键词每个数据源爬取的最大页数（P0 较小，避免拖慢）
+    max_pages: 3
+    # 质量分阈値（低于此分的内容丢弃）
+    min_quality_score: 0.3
+    # 每个缺口最多处理多少篇文档
+    max_docs_per_gap: 5
+
+  # P0 立即触发：true = session 处理完就在同进程触发 handle_p0()
+  p0_immediate: true
+
+  # 调度时间（APScheduler cron 格式）
+  schedule:
+    daily_hour: 2        # P1 每日任务执行小时（0-23）
+    weekly_day: 'mon'    # P2 每周任务执行星期
+    weekly_hour: 3       # P2 每周任务执行小时

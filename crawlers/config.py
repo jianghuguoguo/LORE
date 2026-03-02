@@ -5,11 +5,11 @@
 # 启用/禁用数据源
 ENABLED_SOURCES = {
     'csdn': True,
-    'attack': True,
     'github': True,
     'qianxin': True,  # 奇安信攻防社区
     'xianzhi': True,   # 先知安全技术社区
-    'wechat': True    # 微信公众号
+    'wechat': True,   # 微信公众号（搜狗模式）
+    'rss': True,      # RSS Feed 轻量级增量爬虫
 }
 
 # =======CSDNVIP爬虫配置=====================================================================================
@@ -98,7 +98,21 @@ XIANZHI_RSS_URL = 'https://xz.aliyun.com/feed'
 RAGFLOW_API_KEY = "ragflow-QxNzk2NTcyN2ZkMzExZjA4NjA3MDI0Mm"
 RAGFLOW_BASE_URL = "http://60.205.197.71"
 RAGFLOW_DATASET_ID = "1144627c05c911f197890242ac140003"
-# 是否推送到 RAGFlow
-PUSH_TO_RAGFLOW = True
-# 是否在推送到 RAGFlow 后不保存本地文件 (设置为 True 符合用户 "而不是 raw_data" 的要求)
-RAGFLOW_ONLY = True
+# RAGFlow 暂不可用，数据保存到 raw_data/
+PUSH_TO_RAGFLOW = False
+RAGFLOW_ONLY = False
+
+# =======RSS Feed 配置=============================================================================
+# 各安全社区的 RSS/Atom Feed URL
+# key = feed 短名（同时作为 raw_data/ 下的存储子目录名）
+# 注意：xianzhi/qianxin 已有独立的深度爬虫类，这里是统一的轻量级 RSS-only 入口
+RSS_FEEDS: dict[str, str] = {
+    "xianzhi":   "https://xz.aliyun.com/feed",        # 先知安全技术社区
+    "butian":    "https://forum.butian.net/Rss",       # 奇安信攻防社区
+}
+
+# RSS 轮询间隔（小时）
+RSS_POLL_INTERVAL_HOURS: float = 2.0
+
+# 单次最多返回条目数
+RSS_MAX_ITEMS_PER_FEED: int = 50

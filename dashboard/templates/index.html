@@ -1,349 +1,893 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>爬虫管理系统 - Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/adaptive.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RefPenTest — 知识提炼系统</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
+
 <body>
-    <div class="container">
-        <!-- 头部 -->
-        <header class="header">
-            <div class="header-content">
-                <h1><i class="fas fa-brain"></i> Evo-Pentest 智能检索系统</h1>
-                <div class="header-info">
-                    <span class="status-badge" id="systemStatus">
-                        <i class="fas fa-circle"></i> System 2 Reflection 已就绪
-                    </span>
-                </div>
-            </div>
-        </header>
 
-        <!-- 主内容区 -->
-        <div class="main-content">
-            <!-- 左侧控制面板 -->
-            <aside class="sidebar">
-                <div class="card">
-                    <h2><i class="fas fa-cog"></i> 控制面板</h2>
-                    
-                    <!-- 爬虫配置 -->
-                    <div class="config-section">
-                        <h3>数据源选择</h3>
-                        <div id="crawlerList" class="crawler-list">
-                            <!-- 动态加载爬虫列表 -->
-                        </div>
-                    </div>
-
-                    <!-- 搜索参数 -->
-                    <div class="config-section">
-                        <h3>搜索参数</h3>
-                        <div class="form-group">
-                            <label for="queryInput">
-                                <i class="fas fa-search"></i> 关键词
-                            </label>
-                            <input type="text" id="queryInput" placeholder="输入搜索关键词..." value="渗透测试">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="maxPagesInput">
-                                <i class="fas fa-file-alt"></i> 最大页数
-                            </label>
-                            <input type="number" id="maxPagesInput" min="1" max="20" value="5">
-                        </div>
-                    </div>
-
-                    <!-- 操作按钮 -->
-                    <div class="action-buttons">
-                        <button id="startBtn" class="btn btn-primary">
-                            <i class="fas fa-play"></i> 开始爬取
-                        </button>
-                        <button id="stopBtn" class="btn btn-danger" disabled>
-                            <i class="fas fa-stop"></i> 停止爬取
-                        </button>
-                    </div>
-
-                    <!-- 快捷操作 -->
-                    <div class="quick-actions">
-                        <h3>快捷操作</h3>
-                        <button id="selectAllBtn" class="btn btn-small">
-                            <i class="fas fa-check-double"></i> 全选
-                        </button>
-                        <button id="clearLogsBtn" class="btn btn-small">
-                            <i class="fas fa-trash"></i> 清空日志
-                        </button>
-                        <button id="refreshBtn" class="btn btn-small">
-                            <i class="fas fa-sync"></i> 刷新状态
-                        </button>
-                    </div>
-                </div>
-
-                <!-- 系统信息 -->
-                <div class="card">
-                    <h3><i class="fas fa-info-circle"></i> 系统信息</h3>
-                    <div class="system-info" id="systemInfo">
-                        <p><strong>已注册爬虫:</strong> <span id="crawlerCount">0</span></p>
-                        <p><strong>当前状态:</strong> <span id="currentStatus">空闲</span></p>
-                        <p><strong>总计爬取:</strong> <span id="totalResults">0</span> 条</p>
-                    </div>
-                </div>
-            </aside>
-
-            <!-- 右侧内容区 -->
-            <main class="content">
-                <!-- Tab导航 -->
-                <div class="tabs">
-                    <button class="tab-btn active" data-tab="adaptive">
-                        <i class="fas fa-brain"></i> 智能检索
-                    </button>
-                    <button class="tab-btn" data-tab="hindsight">
-                        <i class="fas fa-history"></i> Hindsight 回合数据
-                    </button>
-                    <button class="tab-btn" data-tab="training">
-                        <i class="fas fa-microchip"></i> 模型进化训练
-                    </button>
-                    <button class="tab-btn" data-tab="progress">
-                        <i class="fas fa-chart-line"></i> 进度监控
-                    </button>
-                    <button class="tab-btn" data-tab="logs">
-                        <i class="fas fa-terminal"></i> 实时日志
-                    </button>
-                    <button class="tab-btn" data-tab="results">
-                        <i class="fas fa-database"></i> 爬取结果
-                    </button>
-                    <button class="tab-btn" data-tab="files">
-                        <i class="fas fa-folder-open"></i> 文件管理
-                    </button>
-                </div>
-
-                <!-- Tab内容 -->
-                <div class="tab-content">
-                    <!-- 智能检索面板 -->
-                    <div class="tab-panel active" id="adaptive-panel">
-                        <!-- 检索控制 -->
-                        <div class="card">
-                            <h2><i class="fas fa-brain"></i> System 2 Reflection - 自适应检索</h2>
-                            <div class="adaptive-search-control">
-                                <div class="form-group">
-                                    <label for="adaptiveQuery">
-                                        <i class="fas fa-search"></i> 检索查询
-                                    </label>
-                                    <input type="text" id="adaptiveQuery" placeholder="例如: CVE-2017-10271 漏洞利用" value="SQL注入攻击">
-                                </div>
-                                <div class="form-group">
-                                    <label for="maxIterations">
-                                        <i class="fas fa-redo"></i> 最大迭代次数
-                                    </label>
-                                    <select id="maxIterations">
-                                        <option value="1">1次</option>
-                                        <option value="2">2次</option>
-                                        <option value="3" selected>3次</option>
-                                    </select>
-                                </div>
-                                <button id="startAdaptiveBtn" class="btn btn-primary btn-glow">
-                                    <i class="fas fa-rocket"></i> 启动智能检索
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- 流程可视化 -->
-                        <div class="card workflow-card">
-                            <h2><i class="fas fa-project-diagram"></i> 检索流程可视化</h2>
-                            <div id="workflowViz" class="workflow-container">
-                                <div class="workflow-placeholder">
-                                    <i class="fas fa-lightbulb"></i>
-                                    <p>点击"启动智能检索"开始可视化展示</p>
-                                    <small>系统将自动检测、诊断、重写查询以获得最佳结果</small>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 迭代历史 -->
-                        <div class="card">
-                            <h2><i class="fas fa-history"></i> 迭代历史追踪</h2>
-                            <div id="iterationHistory" class="iteration-container">
-                                <!-- 动态生成 -->
-                            </div>
-                        </div>
-
-                        <!-- 最终结果 -->
-                        <div class="card">
-                            <div class="card-header-with-actions">
-                                <h2><i class="fas fa-trophy"></i> 检索结果 & 效用评分</h2>
-                                <button id="pushToRagflowBtn" class="btn btn-secondary btn-sm" style="display:none;">
-                                    <i class="fas fa-cloud-upload-alt"></i> 总结经验并推送至 RAGFlow
-                                </button>
-                            </div>
-                            <div id="finalResults" class="results-container">
-                                <div class="empty-state">
-                                    <i class="fas fa-inbox"></i>
-                                    <p>暂无结果</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Hindsight 回合数据面板 -->
-                    <div class="tab-panel" id="hindsight-panel">
-                        <div class="card">
-                            <h2><i class="fas fa-microchip"></i> Step 1: Hindsight Experience Replay (HER) 数据引擎</h2>
-                            <p class="description">
-                                系统自动分析历史攻击日志，提取导致"成功(Success)"的关键检索行为，并将其标记为正样本。
-                            </p>
-                            <div class="stats-grid">
-                                <div class="stat-card">
-                                    <span class="stat-label">已处理日志</span>
-                                    <span class="stat-value" id="hindsightLogCount">0</span>
-                                </div>
-                                <div class="stat-card">
-                                    <span class="stat-label">总计训练样本</span>
-                                    <span class="stat-value text-primary" id="hindsightSampleCount">0</span>
-                                </div>
-                                <div class="stat-card">
-                                    <span class="stat-label">最后运行时间</span>
-                                    <span class="stat-value" id="hindsightLastRun">--</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card">
-                            <h2><i class="fas fa-list"></i> 提取的训练样本 (HER Samples)</h2>
-                            <div class="table-container">
-                                <table class="file-table">
-                                    <thead>
-                                        <tr>
-                                            <th>查询 (Query)</th>
-                                            <th>匹配分数 (Rel)</th>
-                                            <th>标签 (Label)</th>
-                                            <th>攻击上下文</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="hindsightSamplesTable">
-                                        <!-- 动态加载 -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 模型进化训练面板 -->
-                    <div class="tab-panel" id="training-panel">
-                        <div class="card">
-                            <h2><i class="fas fa-microchip"></i> System Evolution - 模型进化训练</h2>
-                            <p class="description">
-                                基于 Hindsight Experience Replay (HER) 标注的数据，自动训练 Cross-Encoder 重排序模型，实现检索系统的自我进化。
-                            </p>
-                            
-                            <div class="training-control" style="margin-bottom: 20px;">
-                                <button id="startTrainingBtn" class="btn btn-primary btn-glow">
-                                    <i class="fas fa-sync-alt"></i> 开始全流程训练 (标注 + 训练)
-                                </button>
-                            </div>
-
-                            <div id="trainingStatusContainer" class="training-status-container" style="display:none; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 8px;">
-                                <div class="status-header" style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                    <span id="trainingPhase" style="font-weight: bold;">准备中...</span>
-                                    <span id="trainingProgressText">0%</span>
-                                </div>
-                                <div class="progress-bar" style="height: 10px; background: #eee; border-radius: 5px; overflow: hidden; margin-bottom: 10px;">
-                                    <div id="trainingProgressBar" class="progress-fill" style="width: 0%; height: 100%; background: #3498db; transition: width 0.3s;"></div>
-                                </div>
-                                <div id="trainingMessage" class="status-message" style="font-size: 0.9em; color: #666;">等待启动...</div>
-                            </div>
-                        </div>
-
-                        <div class="card">
-                            <h2><i class="fas fa-terminal"></i> 训练实时日志</h2>
-                            <div id="trainingLogs" class="terminal-log" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; font-family: 'Consolas', monospace; height: 300px; overflow-y: auto; font-size: 0.85em; line-height: 1.5;">
-                                <div>[SYSTEM] 训练系统就绪。</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 进度监控 -->
-                    <div class="tab-panel" id="progress-panel">
-                        <div class="card">
-                            <h2><i class="fas fa-tasks"></i> 爬取进度</h2>
-                            <div id="progressContainer">
-                                <div class="empty-state">
-                                    <i class="fas fa-clock"></i>
-                                    <p>暂无运行中的任务</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 统计图表 -->
-                        <div class="card">
-                            <h2><i class="fas fa-chart-bar"></i> 数据统计</h2>
-                            <div id="statsContainer" class="stats-grid">
-                                <!-- 动态加载统计卡片 -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 实时日志 -->
-                    <div class="tab-panel" id="logs-panel">
-                        <div class="card">
-                            <h2><i class="fas fa-terminal"></i> 系统日志</h2>
-                            <div class="log-container" id="logContainer">
-                                <div class="log-entry log-info">
-                                    <span class="log-time">2026-01-01 00:00:00</span>
-                                    <span class="log-level">INFO</span>
-                                    <span class="log-source">system</span>
-                                    <span class="log-message">系统启动完成</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 爬取结果 -->
-                    <div class="tab-panel" id="results-panel">
-                        <div class="card">
-                            <h2><i class="fas fa-database"></i> 当前结果</h2>
-                            <div id="resultsContainer">
-                                <div class="empty-state">
-                                    <i class="fas fa-inbox"></i>
-                                    <p>暂无结果数据</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 文件管理 -->
-                    <div class="tab-panel" id="files-panel">
-                        <div class="card">
-                            <h2><i class="fas fa-folder-open"></i> 已保存文件</h2>
-                            <div class="table-container">
-                                <table class="file-table" id="fileTable">
-                                    <thead>
-                                        <tr>
-                                            <th>文件名</th>
-                                            <th>数据源</th>
-                                            <th>大小</th>
-                                            <th>修改时间</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <!-- 动态加载文件列表 -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </main>
-        </div>
-
-        <!-- 页脚 -->
-        <footer class="footer">
-            <p>© 2026 多源爬虫管理系统 | 最后更新: <span id="lastUpdate">--</span></p>
-        </footer>
+  <!-- ══════════════════ TOP HEADER ══════════════════ -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <i class="fas fa-shield-halved brand-icon"></i>
+      <span class="brand-name">RefPenTest</span>
+      <span class="brand-sub">Knowledge Distillation</span>
     </div>
 
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/adaptive.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/training.js') }}"></script>
+    <!-- Mini stat pills -->
+    <div class="topbar-stats" id="miniStats">
+      <div class="mini-stat" title="全部经验条数">
+        <i class="fas fa-database"></i>
+        <span id="ms-total">—</span>
+        <label>Experiences</label>
+      </div>
+      <div class="mini-stat factual" title="事实知识">
+        <i class="fas fa-magnifying-glass"></i>
+        <span id="ms-factual">—</span>
+        <label>FACTUAL</label>
+      </div>
+      <div class="mini-stat neg" title="失败经验">
+        <i class="fas fa-circle-xmark"></i>
+        <span id="ms-neg">—</span>
+        <label>NEG</label>
+      </div>
+      <div class="mini-stat meta" title="元认知规则">
+        <i class="fas fa-brain"></i>
+        <span id="ms-meta">—</span>
+        <label>META</label>
+      </div>
+      <div class="mini-stat" title="已处理会话">
+        <i class="fas fa-folder-open"></i>
+        <span id="ms-sessions">—</span>
+        <label>Sessions</label>
+      </div>
+    </div>
+
+    <!-- Pipeline control -->
+    <div class="topbar-actions">
+      <div class="pipeline-status" id="pipelineStatus">
+        <span class="status-dot idle" id="pipelineDot"></span>
+        <span id="pipelineLabel">Idle</span>
+      </div>
+      <button class="btn-run btn-reflect" id="btnRunPipeline" onclick="runPipeline()">
+        <i class="fas fa-brain"></i> 开启反思
+      </button>
+    </div>
+  </header>
+
+  <!-- ══════════════════ LAYOUT ══════════════════ -->
+  <div class="layout">
+
+    <!-- ── Left Sidebar ──────────────────────────────── -->
+    <aside class="sidebar">
+      <nav class="sidenav">
+        <a class="nav-item active" data-page="overview" onclick="navigate('overview')">
+          <i class="fas fa-chart-pie"></i>
+          <span>总览看板</span>
+        </a>
+        <div class="nav-divider">经验库</div>
+        <a class="nav-item" data-page="factual" onclick="navigate('factual')">
+          <i class="fas fa-magnifying-glass" style="color:var(--factual)"></i>
+          <span>事实知识</span>
+          <em class="nav-badge factual" id="nb-factual">0</em>
+        </a>
+        <a class="nav-item" data-page="pos" onclick="navigate('pos')">
+          <i class="fas fa-circle-check" style="color:var(--pos)"></i>
+          <span>成功经验</span>
+          <em class="nav-badge pos" id="nb-pos">0</em>
+        </a>
+        <a class="nav-item" data-page="neg" onclick="navigate('neg')">
+          <i class="fas fa-circle-xmark" style="color:var(--neg)"></i>
+          <span>避坑指南</span>
+          <em class="nav-badge neg" id="nb-neg">0</em>
+        </a>
+        <a class="nav-item" data-page="meta" onclick="navigate('meta')">
+          <i class="fas fa-brain" style="color:var(--meta)"></i>
+          <span>元认知规则</span>
+          <em class="nav-badge meta" id="nb-meta">0</em>
+        </a>
+        <a class="nav-item" data-page="conceptual" onclick="navigate('conceptual')">
+          <i class="fas fa-lightbulb" style="color:var(--concept)"></i>
+          <span>概念知识</span>
+          <em class="nav-badge concept" id="nb-concept">0</em>
+        </a>
+        <div class="nav-divider">分析</div>
+        <a class="nav-item" data-page="sessions" onclick="navigate('sessions')">
+          <i class="fas fa-folder-open"></i>
+          <span>会话浏览</span>
+        </a>
+        <a class="nav-item" data-page="pipeline" onclick="navigate('pipeline')">
+          <i class="fas fa-gears"></i>
+          <span>流水线日志</span>
+        </a>
+        <a class="nav-item" data-page="crawler" onclick="navigate('crawler')">
+          <i class="fas fa-spider"></i>
+          <span>爬虫管理</span>
+        </a>
+        <div class="nav-divider">Layer 3 融合</div>
+        <a class="nav-item" data-page="consolidated" onclick="navigate('consolidated')">
+          <i class="fas fa-code-merge" style="color:#a78bfa"></i>
+          <span>融合经验库</span>
+          <em class="nav-badge" style="background:rgba(167,139,250,.18);color:#a78bfa;border:1px solid rgba(167,139,250,.4)" id="nb-consolidated">0</em>
+        </a>
+
+        <div class="nav-divider">知识库</div>
+        <a class="nav-item nav-item-external" data-page="ragflow" onclick="navigate('ragflow')">
+          <i class="fas fa-brain" style="color:#a78bfa"></i>
+          <span>RAGflow 经验库</span>
+          <i class="fas fa-arrow-up-right-from-square" style="margin-left:auto;font-size:10px;opacity:.55"></i>
+        </a>
+      </nav>
+
+      <!-- Search / Filter (hidden on overview/sessions/pipeline) -->
+      <div class="sidebar-search" id="sidebarSearch" style="display:none">
+        <div class="search-wrap">
+          <i class="fas fa-search"></i>
+          <input type="text" id="globalSearch" placeholder="搜索经验..."
+                 oninput="onSearch(this.value)">
+        </div>
+        <button id="expRefreshBtn" class="exp-refresh-btn" title="刷新当前页" style="display:none" onclick="refreshCurrentExpPage()">
+          <i class="fas fa-rotate-right"></i> 刷新
+        </button>
+      </div>
+    </aside>
+
+    <!-- ── Main Content ───────────────────────────────── -->
+    <main class="main-area">
+
+      <!-- ─── OVERVIEW PAGE ─────────────────────────── -->
+      <div class="page active" id="page-overview">
+        <div class="page-header">
+          <h2>总览看板</h2>
+                  <div class="project-brand">
+            <div class="project-brand-icon"><i class="fas fa-shield-halved"></i></div>
+            <div class="project-brand-text">
+              <span class="project-brand-name">RefPenTest</span>
+              <span class="project-brand-sub">渗透测试经验库</span>
+            </div>
+          </div>        </div>
+
+        <!-- Stat cards -->
+        <div class="stat-row" id="statCards">
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-database"></i></div>
+            <div class="stat-body">
+              <div class="stat-val" id="sc-total">—</div>
+              <div class="stat-lbl">经验总量</div>
+            </div>
+          </div>
+          <div class="stat-card factual">
+            <div class="stat-icon"><i class="fas fa-magnifying-glass"></i></div>
+            <div class="stat-body">
+              <div class="stat-val" id="sc-factual">—</div>
+              <div class="stat-lbl">事实知识</div>
+            </div>
+          </div>
+          <div class="stat-card neg">
+            <div class="stat-icon"><i class="fas fa-circle-xmark"></i></div>
+            <div class="stat-body">
+              <div class="stat-val" id="sc-neg">—</div>
+              <div class="stat-lbl">避坑指南 (NEG)</div>
+            </div>
+          </div>
+          <div class="stat-card meta">
+            <div class="stat-icon"><i class="fas fa-brain"></i></div>
+            <div class="stat-body">
+              <div class="stat-val" id="sc-meta">—</div>
+              <div class="stat-lbl">元认知规则</div>
+            </div>
+          </div>
+          <div class="stat-card concept">
+            <div class="stat-icon"><i class="fas fa-lightbulb"></i></div>
+            <div class="stat-body">
+              <div class="stat-val" id="sc-concept">—</div>
+              <div class="stat-lbl">概念知识</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-folder-open"></i></div>
+            <div class="stat-body">
+              <div class="stat-val" id="sc-sessions">—</div>
+              <div class="stat-lbl">处理会话数</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="chart-row">
+          <div class="chart-card large">
+            <div class="chart-title">知识层分布</div>
+            <div id="chartLayers" style="height:240px"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">会话结果分布</div>
+            <div id="chartOutcomes" style="height:240px"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">置信度分布</div>
+            <div id="chartConf" style="height:240px"></div>
+          </div>
+        </div>
+        <div class="chart-row">
+          <div class="chart-card">
+            <div class="chart-title">目标服务分布</div>
+            <div id="chartServices" style="height:220px"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">攻击阶段分布</div>
+            <div id="chartPhases" style="height:220px"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">提取来源分布</div>
+            <div id="chartSources" style="height:220px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── EXPERIENCE LIST PAGES (共用模板) ─────── -->
+      <div class="page" id="page-factual">
+        <div class="page-header">
+          <h2><span style="color:var(--factual)">FACTUAL</span> — 事实知识</h2>
+          <span class="page-sub">工具扫描发现的端口、服务版本、CVE 确认等结构化事实</span>
+        </div>
+        <div class="exp-grid" id="grid-factual"></div>
+        <div class="pagination" id="pg-factual"></div>
+      </div>
+
+      <div class="page" id="page-pos">
+        <div class="page-header">
+          <h2><span style="color:var(--pos)">PROCEDURAL_POS</span> — 成功经验</h2>
+          <span class="page-sub">导致攻击成功的操作链路与成功触发器</span>
+        </div>
+        <div class="exp-grid" id="grid-pos"></div>
+        <div class="pagination" id="pg-pos"></div>
+      </div>
+
+      <div class="page" id="page-neg">
+        <div class="page-header">
+          <h2><span style="color:var(--neg)">PROCEDURAL_NEG</span> — 避坑指南</h2>
+          <span class="page-sub">失败模式、根因分析与修复建议</span>
+        </div>
+        <div class="exp-grid" id="grid-neg"></div>
+        <div class="pagination" id="pg-neg"></div>
+      </div>
+
+      <div class="page" id="page-meta">
+        <div class="page-header">
+          <h2><span style="color:var(--meta)">METACOGNITIVE</span> — 元认知规则</h2>
+          <span class="page-sub">IF / THEN / NOT 形式的决策规则与渗透测试元策略</span>
+        </div>
+        <div class="exp-grid" id="grid-meta"></div>
+        <div class="pagination" id="pg-meta"></div>
+      </div>
+
+      <div class="page" id="page-conceptual">
+        <div class="page-header">
+          <h2><span style="color:var(--concept)">CONCEPTUAL</span> — 概念知识</h2>
+          <span class="page-sub">漏洞概念、利用技术及防御机制的系统性知识</span>
+        </div>
+        <div class="exp-grid" id="grid-conceptual"></div>
+        <div class="pagination" id="pg-conceptual"></div>
+      </div>
+
+      <!-- ─── SESSIONS PAGE ─────────────────────────── -->
+      <div class="page" id="page-sessions">
+        <div class="page-header">
+          <h2>会话浏览</h2>
+          <span class="page-sub">已处理的靶场攻击会话与经验提炼摘要</span>
+        </div>        <!-- 层码图例 -->
+        <div class="layer-legend">
+          <span class="layer-legend-title"><i class="fas fa-circle-info"></i> 层码说明</span>
+          <span class="layer-pill F">F</span><span class="layer-legend-desc">FACTUAL — 事实知识（端口/服务/CVE 等实证观测）</span>
+          <span class="layer-pill P">P+</span><span class="layer-legend-desc">PROCEDURAL_POS — 成功路径（可复现的有效操作序列）</span>
+          <span class="layer-pill N">N</span><span class="layer-legend-desc">PROCEDURAL_NEG — 失败避坑（已证实无效的操作及原因）</span>
+          <span class="layer-pill M">M</span><span class="layer-legend-desc">METACOGNITIVE — 元认知规则（决策失误与最优路径总结）</span>
+          <span class="layer-pill C">C</span><span class="layer-legend-desc">CONCEPTUAL — 概念知识（漏洞模式与利用条件规律）</span>
+        </div>        <div class="sessions-table-wrap">
+          <table class="sessions-table">
+            <thead>
+              <tr>
+                <th>Session ID</th>
+                <th>目标服务</th>
+                <th>CVE</th>
+                <th>结果</th>
+                <th>BAR</th>
+                <th>经验总量</th>
+                <th>分层分布</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody id="sessionsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ─── PIPELINE LOG PAGE ──────────────────────── -->
+      <div class="page" id="page-pipeline">
+        <div class="page-header">
+          <h2>流水线日志</h2>
+          <span class="page-sub">全链路反思流水线 Layer1 → Layer2 → Layer3（Phase 1-5）</span>
+          <button class="btn-run btn-reflect" style="margin-left:auto" onclick="runPipeline()">
+            <i class="fas fa-brain"></i> 开启完整反思
+          </button>
+        </div>
+        <div class="pipeline-info-row">
+          <div class="info-badge" id="plStatus"><i class="fas fa-circle"></i> Idle</div>
+          <div class="info-badge" id="plLastRun"><i class="fas fa-clock"></i> 从未运行</div>
+        </div>
+        <div class="terminal-block">
+          <div class="terminal-header">
+            <span><i class="fas fa-terminal"></i> stdout</span>
+          </div>
+          <pre id="plOutput" class="terminal-body">（流水线未运行）</pre>
+        </div>
+        <div class="terminal-block" id="plErrBlock" style="margin-top:12px;display:none">
+          <div class="terminal-header error">
+            <span><i class="fas fa-triangle-exclamation"></i> stderr</span>
+          </div>
+          <pre id="plError" class="terminal-body error"></pre>
+        </div>
+      </div>
+
+      <!-- ─── CRAWLER PAGE ─────────────────── -->
+      <div class="page" id="page-crawler">
+        <div class="page-header">
+          <h2><i class="fas fa-spider" style="color:var(--meta);margin-right:8px"></i>爬虫管理</h2>
+          <span class="page-sub">RAG 知识补充爬取 · 外部知识库同步 · 原始数据清理</span>
+        </div>
+
+        <!-- ─── 区块 W: 微信公众号爬虫（独立区域）─── -->
+        <div class="wechat-crawler-section">
+          <div class="section-label wechat-label">
+            <i class="fab fa-weixin" style="color:#07c160"></i> 微信公众号爬虫
+            <span class="section-hint">点击账号卡片可选中用于爬取，点击
+              <i class="fas fa-newspaper" style="font-size:11px"></i>
+              可预览已采集文章
+            </span>
+          </div>
+
+          <!-- 主区域：左列（种子卡片 + 控制） + 右列（文章预览面板） -->
+          <div class="wechat-main-layout">
+
+            <!-- 左列 -->
+            <div class="wechat-left-col">
+              <!-- 种子账号卡片网格 -->
+              <div class="wechat-seed-grid" id="wechatSeedGrid">
+                <div style="color:var(--text-dim);padding:10px;font-size:13px">
+                  <i class="fas fa-spinner fa-spin"></i> 加载种子账号…
+                </div>
+              </div>
+
+              <!-- 控制面板 -->
+              <div class="crawler-panel wechat-panel">
+                <div class="crawler-form">
+                  <div class="crawler-form-row">
+                    <label>每号采集</label>
+                    <input type="number" id="wechatCrawlCount" value="10" min="1" max="100"
+                           class="crawl-input narrow">
+                    <span style="color:var(--text-dim);font-size:12px;margin-left:4px">篇</span>
+                  </div>
+                  <div class="crawler-form-actions">
+                    <button class="btn-run wechat-run-btn" id="btnWechatCrawl" onclick="wechatCrawlRun()">
+                      <i class="fab fa-weixin"></i> 开始爬取
+                    </button>
+                    <button class="btn-secondary" onclick="wechatSelectAll(true)">全选</button>
+                    <button class="btn-secondary" onclick="wechatSelectAll(false)">全不选</button>
+                    <button class="btn-secondary" onclick="showWechatAddForm()">
+                      <i class="fas fa-plus"></i> 添加账号
+                    </button>
+                    <div class="crawler-status-row" id="wechatStatusRow">
+                      <span class="status-dot idle" id="wechatDot"></span>
+                      <span id="wechatLabel">空闲</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 微信爬取日志 -->
+              <div class="terminal-block" id="wechatLogBlock" style="display:none;margin-top:12px">
+                <div class="terminal-header">
+                  <span><i class="fab fa-weixin"></i> 微信爬虫日志</span>
+                  <span id="wechatLastRun" style="margin-left:auto;font-size:11px;color:var(--text-dim)"></span>
+                </div>
+                <pre id="wechatOutput" class="terminal-body">(未运行)</pre>
+              </div>
+              <div class="terminal-block" id="wechatErrBlock" style="margin-top:8px;display:none">
+                <div class="terminal-header error">
+                  <span><i class="fas fa-triangle-exclamation"></i> stderr</span>
+                </div>
+                <pre id="wechatError" class="terminal-body error"></pre>
+              </div>
+            </div><!-- end wechat-left-col -->
+
+            <!-- 右列：文章预览面板（点击公众号卡片后展开） -->
+            <div class="wechat-article-panel" id="wechatArticlePanel">
+              <div class="wap-header">
+                <div class="wap-account-info">
+                  <div class="wap-avatar" id="wapAvatar">?</div>
+                  <div class="wap-account-meta">
+                    <div class="wap-account-name" id="wapAccountName">公众号</div>
+                    <div class="wap-account-sub">微信公众号</div>
+                  </div>
+                </div>
+                <button class="wap-close" onclick="closeWechatPanel()" title="关闭预览">
+                  <i class="fas fa-xmark"></i>
+                </button>
+              </div>
+              <div class="wap-count-bar" id="wapCountBar"></div>
+              <div class="wap-list" id="wapList">
+                <div class="wap-loading"><i class="fas fa-spinner fa-spin"></i> 加载中…</div>
+              </div>
+            </div><!-- end wechat-article-panel -->
+
+          </div><!-- end wechat-main-layout -->
+        </div><!-- end wechat-crawler-section -->
+
+        <!-- ─── 区块 A: 网站爬虫数据源 ─── -->
+        <div class="section-label"><i class="fas fa-plug"></i> 网站爬虫数据源
+          <span class="section-hint">点击卡片可切换选中状态</span>
+        </div>
+        <!-- 可点击的来源卡片（同步到下方复选框） -->
+        <div class="crawler-source-grid" id="crawlerSources"><!-- JS 填充 --></div>
+
+        <!-- 爬取控制面板 -->
+        <div class="crawler-panel">
+          <div class="section-label" style="margin-top:0"><i class="fas fa-magnifying-glass"></i> 按关键词补充爬取</div>
+          <div class="crawler-form">
+            <div class="crawler-form-row">
+              <label>关键词 / CVE ID</label>
+              <input type="text" id="crawlQuery" placeholder="如 CVE-2024-23897、Apache RCE…" class="crawl-input">
+            </div>
+            <!-- 隐藏的复选框组，由卡片点击驱动 -->
+            <input type="hidden" id="sourceCheckboxes">
+            <div class="crawler-form-row">
+              <label>最大爬取页数</label>
+              <input type="number" id="crawlMaxPages" value="5" min="1" max="50" class="crawl-input narrow">
+            </div>
+            <div class="crawler-form-actions">
+              <button class="btn-run" id="btnCrawlRun" onclick="crawlRun()">
+                <i class="fas fa-spider"></i> 开始爬取
+              </button>
+              <button class="btn-secondary" onclick="crawlerSelectAll(true)">全选</button>
+              <button class="btn-secondary" onclick="crawlerSelectAll(false)">全不选</button>
+              <div class="crawler-status-row" id="crawlerStatusRow">
+                <span class="status-dot idle" id="crawlerDot"></span>
+                <span id="crawlerLabel">空闲</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 爬虫日志 -->
+        <div class="terminal-block" id="crawlerLogBlock">
+          <div class="terminal-header">
+            <span><i class="fas fa-terminal"></i> 爬虫运行日志</span>
+            <span id="crawlerLastRun" style="margin-left:auto;font-size:11px;color:var(--text-dim)"></span>
+          </div>
+          <pre id="crawlerOutput" class="terminal-body">(爬虫未运行)</pre>
+        </div>
+        <div class="terminal-block" id="crawlerErrBlock" style="margin-top:8px;display:none">
+          <div class="terminal-header error"><span><i class="fas fa-triangle-exclamation"></i> stderr</span></div>
+          <pre id="crawlerError" class="terminal-body error"></pre>
+        </div>
+
+        <!-- ─── 区块 RSS: RSS Feed 自动订阅 ─── -->
+        <div class="rss-section" style="margin-top:28px">
+          <div class="section-label">
+            <i class="fas fa-rss" style="color:#f97316"></i> RSS 自动订阅
+            <span class="section-hint">定时拉取安全社区新文章 · 增量去重入库</span>
+          </div>
+
+          <!-- Feed 状态卡片 -->
+          <div class="rss-feed-grid" id="rssFeedCards">
+            <!-- JS 填充 -->
+          </div>
+
+          <!-- 调度配置 + 手动触发 -->
+          <div class="rss-control-bar">
+            <div class="rss-schedule-row">
+              <span class="rss-meta-item">
+                <i class="fas fa-clock"></i>
+                轮询间隔：<strong id="rssInterval">2</strong> 小时
+              </span>
+              <span class="rss-meta-item">
+                <i class="fas fa-layer-group"></i>
+                每源上限：<strong id="rssMaxItems">50</strong> 条
+              </span>
+              <span class="rss-meta-item" id="rssNextRunMeta" style="display:none">
+                <i class="fas fa-circle-play"></i>
+                下次运行：<span id="rssNextRun">—</span>
+              </span>
+            </div>
+            <div class="crawler-form-actions" style="margin-top:10px">
+              <button class="btn-run" id="btnRssSync" onclick="rssSync()">
+                <i class="fas fa-rotate"></i> 立即同步
+              </button>
+              <div class="crawler-status-row">
+                <span class="status-dot idle" id="rssDot"></span>
+                <span id="rssLabel">空闲</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─── 区块 B: 外部知识库同步 ─── -->
+        <div class="section-label" style="margin-top:28px">
+          <i class="fas fa-database"></i> 外部知识库同步
+          <span class="section-hint">点击卡片可切换选中，支持选择性同步</span>
+        </div>
+        <div class="sync-repo-grid" id="syncRepoGrid"><!-- JS 填充 --></div>
+
+        <div class="crawler-panel">
+          <div class="section-label" style="margin-top:0"><i class="fas fa-rotate"></i> 执行同步</div>
+          <div class="crawler-form">
+            <div class="crawler-form-actions">
+              <button class="btn-run" id="btnSyncRun" onclick="syncRun()">
+                <i class="fas fa-rotate"></i> 同步选中仓库
+              </button>
+              <button class="btn-secondary" onclick="syncSelectAll(true)">全选</button>
+              <button class="btn-secondary" onclick="syncSelectAll(false)">全不选</button>
+              <div class="crawler-status-row">
+                <span class="status-dot idle" id="syncDot"></span>
+                <span id="syncLabel">空闲</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 同步日志 -->
+        <div class="terminal-block" id="syncLogBlock" style="margin-top:8px">
+          <div class="terminal-header">
+            <span><i class="fas fa-terminal"></i> 同步运行日志</span>
+            <span id="syncLastRun" style="margin-left:auto;font-size:11px;color:var(--text-dim)"></span>
+          </div>
+          <pre id="syncOutput" class="terminal-body">(同步未运行)</pre>
+        </div>
+        <div class="terminal-block" id="syncErrBlock" style="margin-top:8px;display:none">
+          <div class="terminal-header error"><span><i class="fas fa-triangle-exclamation"></i> stderr</span></div>
+          <pre id="syncError" class="terminal-body error"></pre>
+        </div>
+
+        <!-- ─── 区块 C: RAG 源文件管理 ─── -->
+        <div class="crawler-panel" style="margin-top:24px">
+          <div class="section-label" style="margin-top:0"><i class="fas fa-trash-can"></i> RAG 源文件管理</div>
+          <div class="rawdata-toolbar">
+            <span id="rawdataTotalLabel" style="color:var(--text-muted);font-size:13px">…载入中</span>
+            <button class="btn-danger" onclick="crawlDeleteAll()" style="margin-left:auto">
+              <i class="fas fa-bomb"></i> 清空全部爬虫缓存
+            </button>
+          </div>
+          <div class="rawdata-groups" id="rawdataGroups"><!-- JS 填充 --></div>
+        </div>
+      </div>
+
+      <!-- ─── CONSOLIDATED (Layer3) PAGE ──────────────────── -->
+      <div class="page" id="page-consolidated">
+        <div class="page-header">
+          <h2>
+            <i class="fas fa-code-merge" style="color:#a78bfa;margin-right:10px;filter:drop-shadow(0 0 8px #a78bfa88)"></i>
+            XPEC Layer3 — 融合经验库
+          </h2>
+          <span class="page-sub">多 session 经验等价集 → 规则融合 → 置信度校准 → 权威知识提炼</span>
+        </div>
+
+        <!-- ─ 融合流水线可视化 ─ -->
+        <div class="fusion-pipeline-banner">
+          <div class="fpl-stage fpl-raw">
+            <div class="fpl-icon"><i class="fas fa-database"></i></div>
+            <div class="fpl-label">原始经验</div>
+            <div class="fpl-val" id="fpl-raw">171 条</div>
+          </div>
+          <div class="fpl-arrow"><i class="fas fa-chevron-right"></i><span>SEC</span></div>
+          <div class="fpl-stage fpl-cluster">
+            <div class="fpl-icon"><i class="fas fa-object-group"></i></div>
+            <div class="fpl-label">等价集聚类</div>
+            <div class="fpl-val">55 个</div>
+          </div>
+          <div class="fpl-arrow"><i class="fas fa-chevron-right"></i><span>RME</span></div>
+          <div class="fpl-stage fpl-merge">
+            <div class="fpl-icon"><i class="fas fa-code-merge"></i></div>
+            <div class="fpl-label">规则融合</div>
+            <div class="fpl-val" id="fpl-merged">16 条</div>
+          </div>
+          <div class="fpl-arrow"><i class="fas fa-chevron-right"></i><span>BCC</span></div>
+          <div class="fpl-stage fpl-bcc">
+            <div class="fpl-icon"><i class="fas fa-gauge-high"></i></div>
+            <div class="fpl-label">置信度校准</div>
+            <div class="fpl-val" id="fpl-avgp">avg p</div>
+          </div>
+          <div class="fpl-arrow"><i class="fas fa-chevron-right"></i><span>KLM</span></div>
+          <div class="fpl-stage fpl-klm">
+            <div class="fpl-icon"><i class="fas fa-star"></i></div>
+            <div class="fpl-label">权威知识</div>
+            <div class="fpl-val" id="fpl-consolidated">consolidated</div>
+          </div>
+        </div>
+
+        <!-- ─ 统计卡片行 ─ -->
+        <div class="cons-stat-row" id="consStatRow">
+          <div class="cons-stat-card c-purple">
+            <div class="cons-stat-icon"><i class="fas fa-compress-arrows-alt"></i></div>
+            <div class="cons-stat-body">
+              <div class="cons-stat-val" id="css-ratio">—</div>
+              <div class="cons-stat-lbl">压缩比（原始/融合）</div>
+            </div>
+          </div>
+          <div class="cons-stat-card c-green">
+            <div class="cons-stat-icon"><i class="fas fa-circle-check"></i></div>
+            <div class="cons-stat-body">
+              <div class="cons-stat-val" id="css-consolidated">—</div>
+              <div class="cons-stat-lbl">consolidated 成熟度</div>
+            </div>
+          </div>
+          <div class="cons-stat-card c-blue">
+            <div class="cons-stat-icon"><i class="fas fa-shield-halved"></i></div>
+            <div class="cons-stat-body">
+              <div class="cons-stat-val" id="css-validated">—</div>
+              <div class="cons-stat-lbl">validated 成熟度</div>
+            </div>
+          </div>
+          <div class="cons-stat-card c-amber">
+            <div class="cons-stat-icon"><i class="fas fa-gauge"></i></div>
+            <div class="cons-stat-body">
+              <div class="cons-stat-val" id="css-avgp">—</div>
+              <div class="cons-stat-lbl">平均 p_fused</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ─ 过滤行 ─ -->
+        <div class="cons-filter-row">
+          <div class="cons-filter-group" id="consFilterLayer">
+            <span class="cons-filter-label">层类型</span>
+            <button class="cons-filter-btn active" data-filter="layer" data-val="">全部</button>
+            <button class="cons-filter-btn" data-filter="layer" data-val="PROCEDURAL_NEG">NEG</button>
+            <button class="cons-filter-btn" data-filter="layer" data-val="PROCEDURAL_POS">POS</button>
+            <button class="cons-filter-btn" data-filter="layer" data-val="FACTUAL_RULE">FACTUAL_RULE</button>
+            <button class="cons-filter-btn" data-filter="layer" data-val="FACTUAL_LLM">FACTUAL_LLM</button>
+            <button class="cons-filter-btn" data-filter="layer" data-val="METACOGNITIVE">META</button>
+            <button class="cons-filter-btn" data-filter="layer" data-val="CONCEPTUAL">CONCEPTUAL</button>
+            <button class="cons-filter-btn" data-filter="layer" data-val="RAG_EVALUATION">RAG_EVAL</button>
+          </div>
+          <div class="cons-filter-group">
+            <span class="cons-filter-label">成熟度</span>
+            <button class="cons-filter-btn active" data-filter="maturity" data-val="">全部</button>
+            <button class="cons-filter-btn" data-filter="maturity" data-val="consolidated">consolidated</button>
+            <button class="cons-filter-btn" data-filter="maturity" data-val="validated">validated</button>
+            <button class="cons-filter-btn" data-filter="maturity" data-val="raw">raw</button>
+          </div>
+        </div>
+
+        <!-- ─ 经验卡片网格 ─ -->
+        <div class="cons-grid" id="consGrid">
+          <div class="cons-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
+        </div>
+
+        <!-- ─── Layer4 知识健康状态（内嵌）─── -->
+        <div class="section-card" style="margin-top:24px">
+          <div class="section-card-header">
+            <i class="fas fa-heart-pulse" style="color:#f87171"></i>
+            <span>知识健康状态</span>
+            <button class="btn-muted" style="margin-left:auto;font-size:12px" onclick="loadKlmHealth()">
+              <i class="fas fa-rotate-right"></i> 刷新
+            </button>
+          </div>
+          <div class="stats-row" style="margin:12px 0 16px">
+            <div class="stat-card"><div class="stat-label">KLM 总条</div><div class="stat-value" id="klm-total">—</div></div>
+            <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value" style="color:#4ade80" id="klm-active">—</div></div>
+            <div class="stat-card"><div class="stat-label">冲突</div><div class="stat-value" style="color:#f87171" id="klm-conflicted">—</div></div>
+            <div class="stat-card"><div class="stat-label">已融合</div><div class="stat-value" style="color:#a78bfa" id="klm-cons-count">—</div></div>
+            <div class="stat-card"><div class="stat-label">RAGFlow 同步</div><div class="stat-value" style="color:#38bdf8" id="klm-ragflow-synced">—</div></div>
+          </div>
+          <!-- 生命周期比例条 -->
+          <div style="margin-bottom:14px">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">生命周期分布</div>
+            <div id="klmLifecycleBar" style="height:12px;border-radius:6px;overflow:hidden;display:flex;background:var(--bg-deeper)"></div>
+            <div id="klmLifecycleLegend" style="display:flex;gap:14px;margin-top:5px;flex-wrap:wrap;font-size:11px"></div>
+          </div>
+          <!-- 冲突条目折叠列表 -->
+          <details>
+            <summary style="cursor:pointer;font-size:13px;color:var(--text-muted);user-select:none">
+              <i class="fas fa-triangle-exclamation" style="color:#f87171;margin-right:4px"></i>
+              冲突条目 <em id="conflicts-count-badge" class="nav-badge" style="background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.35);margin-left:4px">0</em>
+            </summary>
+            <div style="overflow-x:auto;margin-top:10px">
+              <table class="data-table" id="conflictsTable">
+                <thead><tr>
+                  <th>Exp ID</th><th>知识层</th><th>成熟度</th><th>目标服务</th>
+                  <th>冲突原因</th><th>时间</th>
+                </tr></thead>
+                <tbody id="conflictsTbody">
+                  <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px">
+                    <i class="fas fa-spinner fa-spin"></i>
+                  </td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+
+        <!-- ─── 经验缺口分析（内嵌）─── -->
+        <div class="section-card" style="margin-top:16px;margin-bottom:28px">
+          <div class="section-card-header">
+            <i class="fas fa-magnifying-glass-chart" style="color:#fbbf24"></i>
+            <span>经验缺口分析</span>
+            <button class="btn-muted" style="margin-left:auto;font-size:12px" onclick="loadGapsInline()">
+              <i class="fas fa-rotate-right"></i> 刷新
+            </button>
+          </div>
+          <div id="gapsInlineWrap" style="margin-top:10px">
+            <div style="color:var(--text-muted);font-size:13px;text-align:center;padding:16px">
+              <i class="fas fa-spinner fa-spin"></i> 加载中...
+            </div>
+          </div>
+          <!-- 定向爬取入口 -->
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:7px">
+              <i class="fas fa-spider" style="margin-right:4px"></i>
+              定向补充爬取（CSDN · GitHub · 奇安信 · 先知社区）
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="text" id="gapCrawlKeywords" class="crawl-input" style="flex:1;min-width:180px"
+                     placeholder="输入关键词（或点击上方缺口自动填入）">
+              <input type="number" id="gapCrawlPages" class="crawl-input" value="3" min="1" max="20"
+                     style="width:58px" title="每源最大页数">
+              <span style="font-size:11px;color:var(--text-muted)">页/源</span>
+              <button class="btn-run" id="gapCrawlBtn" onclick="gapCrawlRun()"
+                      style="padding:6px 14px;font-size:13px">
+                <i class="fas fa-rocket"></i> 爬取
+              </button>
+              <span id="gapCrawlMsg" style="font-size:12px;color:var(--text-muted)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── (已合并入融合经验库页) CONFLICTS/GAPS ─── -->
+      <div style="display:none" id="page-conflicts"></div>
+      <div style="display:none" id="page-gaps"></div>
+
+      <!-- ─── RAGFLOW PAGE ─────────────────────────────────── -->
+      <div class="page" id="page-ragflow">
+        <div class="page-header">
+          <h2>RAGflow 经验库</h2>
+          <span class="page-sub">Layer 2 经验已同步至 RAGflow 智能检索平台</span>
+        </div>
+
+        <div class="ragflow-launcher">
+          <div class="ragflow-hero">
+            <div class="ragflow-hero-icon">
+              <i class="fas fa-brain"></i>
+            </div>
+            <h3>RAGflow 知识检索</h3>
+            <p>当前经验库已将所有 Layer 2 经验条目同步入库，支持基于语义相似度的智能检索。点击下方按鈕即可跳转到 RAGflow Web UI。</p>
+            <a class="ragflow-open-btn" href="http://8.140.33.83" target="_blank" rel="noopener">
+              <i class="fas fa-arrow-up-right-from-square"></i>
+              打开 RAGflow
+            </a>
+          </div>
+
+          <div class="ragflow-info-grid">
+            <div class="ragflow-info-card">
+              <i class="fas fa-layer-group" style="color:#38bdf8;font-size:28px"></i>
+              <div>
+                <strong>经验分类</strong>
+                <span>FACTUAL / PROCEDURAL_POS<br>PROCEDURAL_NEG / META<br>CONCEPTUAL</span>
+              </div>
+            </div>
+            <div class="ragflow-info-card">
+              <i class="fas fa-file-lines" style="color:#4ade80;font-size:28px"></i>
+              <div>
+                <strong>文档格式</strong>
+                <span>每条经验独立成一个 .txt<br>文件名包含 session + 分类</span>
+              </div>
+            </div>
+            <div class="ragflow-info-card">
+              <i class="fas fa-server" style="color:#fbbf24;font-size:28px"></i>
+              <div>
+                <strong>服务地址</strong>
+                <span>http://8.140.33.83<br>账号 123456@mail.com</span>
+              </div>
+            </div>
+            <div class="ragflow-info-card">
+              <i class="fas fa-database" style="color:#c084fc;font-size:28px"></i>
+              <div>
+                <strong>经验库 ID</strong>
+                <span style="font-family:var(--font-mono);font-size:11px;word-break:break-all">b5f3a66f065f11f1<br>bca40242ac120006</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main><!-- end .main-area -->
+  </div><!-- end .layout -->
+
+  <!-- ══════════════════ EXPERIENCE DETAIL MODAL ══════════════════ -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <span class="modal-layer" id="mLayer"></span>
+          <span class="modal-id" id="mId"></span>
+        </div>
+        <button class="modal-close" onclick="closeModal()">
+          <i class="fas fa-xmark"></i>
+        </button>
+      </div>
+      <div class="modal-body" id="mBody"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ ADD WECHAT ACCOUNT MODAL ══════════════════ -->
+  <div class="modal-overlay" id="wechatAddOverlay" onclick="closeWechatAddModal()">
+    <div class="modal-box" style="max-width:440px" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:8px">
+          <i class="fas fa-plus-circle" style="color:#38bdf8"></i>
+          <span style="font-size:15px;font-weight:600">添加种子账号</span>
+        </div>
+        <button class="modal-close" onclick="closeWechatAddModal()">
+          <i class="fas fa-xmark"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="padding:16px 20px">
+        <div class="crawler-form-row" style="margin-bottom:10px">
+          <label>公众号名称 <span style="color:#f87171">*</span></label>
+          <input type="text" id="addAccName" class="crawl-input" placeholder="如 FreeBuf" style="flex:1">
+        </div>
+        <div class="crawler-form-row" style="margin-bottom:10px">
+          <label>所属分类 <span style="color:#f87171">*</span></label>
+          <select id="addAccCategory" class="crawl-input" style="flex:1">
+            <option value="vuln_research">漏洞研究</option>
+            <option value="redteam_tools">红队工具</option>
+            <option value="code_audit">代码审计</option>
+            <option value="threat_intel">威胁情报</option>
+            <option value="media">安全媒体</option>
+            <option value="ctf">CTF</option>
+            <option value="auto_discovered">自动发现</option>
+          </select>
+        </div>
+        <div class="crawler-form-row" style="margin-bottom:10px">
+          <label>优先级</label>
+          <select id="addAccPriority" class="crawl-input" style="flex:1">
+            <option value="high">high — 高优先级</option>
+            <option value="normal" selected>normal — 普通</option>
+            <option value="low">low — 低优先级</option>
+          </select>
+        </div>
+        <div class="crawler-form-row" style="margin-bottom:10px">
+          <label>标签</label>
+          <input type="text" id="addAccTags" class="crawl-input" placeholder="逗号分隔，如 漏洞,CVE" style="flex:1">
+        </div>
+        <div class="crawler-form-row" style="margin-bottom:16px">
+          <label>备注</label>
+          <input type="text" id="addAccNotes" class="crawl-input" placeholder="（可选）" style="flex:1">
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn-secondary" onclick="closeWechatAddModal()">取消</button>
+          <button class="btn-run" onclick="submitWechatAddAccount()">
+            <i class="fas fa-plus"></i> 添加
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

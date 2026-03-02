@@ -1,0 +1,111 @@
+# seed_accounts.yaml
+# =====================
+# 渗透测试领域公众号种子库（人工精选，按安全领域细分）
+#
+# 字段说明：
+#   name     : 微信搜索用的公众号名称（必填）
+#   tags     : 内容标签列表
+#   priority : 爬取优先级（high / normal / low）
+#   notes    : 备注（可选）
+#
+# 自动发现的账号会被追加到 auto_discovered 分类。
+# 人工审核 review_queue.jsonl 中的账号可手动移入对应分类。
+
+categories:
+
+  # ── 漏洞研究 & 安全分析 ──────────────────────────────────────────────────
+  vuln_research:
+    - name: 360漏洞研究院
+      tags: [漏洞挖掘, CVE, 二进制, 0day]
+      priority: high
+
+    - name: 奇安信CERT
+      tags: [漏洞预警, CVE, 应急响应]
+      priority: high
+
+    - name: 安天
+      tags: [APT, 恶意软件, 威胁情报]
+      priority: normal
+
+    - name: 看雪学苑
+      tags: [逆向工程, 二进制漏洞, PWN, 恶意样本分析, Android安全, CVE复现]
+      priority: high
+      notes: 看雪安全社区官方公众号，国内逆向/二进制安全模板级来源
+
+  # ── 红队 & 渗透测试实战 ──────────────────────────────────────────────────
+  redteam_tools:
+    - name: 红队笔记
+      tags: [内网渗透, C2, 横向移动, 持久化]
+      priority: high
+
+    - name: 渗透云笔记
+      tags: [工具使用, bypass, 内网]
+      priority: high
+
+    - name: 米斯特安全
+      tags: [内网渗透, 工具, 红队]
+      priority: normal
+
+    - name: 黑糖安全
+      tags: [渗透测试, 技巧, 工具]
+      priority: normal
+
+    - name: 隐雾安全
+      tags: [红队, 隐蔽奥隐, bypass, 免杀, 内网渗透]
+      priority: normal
+      notes: 偏向红队隐蔽渗透方向
+
+  # ── 代码审计 ─────────────────────────────────────────────────────────────
+  code_audit:
+    - name: 代码审计社区
+      tags: [PHP, Java, 代码审计, 反序列化]
+      priority: high
+
+    - name: 程序猿小米
+      tags: [Java, 反序列化, 代码审计]
+      priority: normal
+
+  # ── 漏洞情报 & 预警 ──────────────────────────────────────────────────────
+  threat_intel:
+    - name: 安全内参
+      tags: [威胁情报, APT, 政策, 事件]
+      priority: normal
+
+    - name: 微步在线研究响应中心
+      tags: [APT, 恶意软件, TI]
+      priority: high
+
+    - name: 奇安信威胁情报中心
+      tags: [APT, 威胁情报, CVE]
+      priority: normal
+
+  # ── 安全媒体（综合）─────────────────────────────────────────────────────
+  media:
+    - name: FreeBuf
+      tags: [综合, 新闻, 技术, 漏洞]
+      priority: normal
+
+    - name: 安全客
+      tags: [综合, 漏洞, 事件, 技术]
+      priority: normal
+
+    - name: 嘶吼
+      tags: [综合, 技术, 攻防]
+      priority: normal
+
+    - name: 安全牛
+      tags: [综合, 产品, 政策]
+      priority: low
+
+  # ── CTF & 比赛 ──────────────────────────────────────────────────────────
+  ctf:
+    - name: XCTF联赛
+      tags: [CTF, Writeup, 竞赛]
+      priority: normal
+
+    - name: Nu1L Team
+      tags: [CTF, Writeup, 二进制, Web]
+      priority: high
+
+  # ── 自动发现（由 DiscoveryScheduler 自动追加）───────────────────────────
+  auto_discovered: []

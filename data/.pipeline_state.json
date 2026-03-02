@@ -1,0 +1,65 @@
+{
+  "layer0": {
+    "status": "done",
+    "started_at": "2026-03-01T06:20:33.835597+00:00",
+    "command": "python scripts/run_layer0.py --log-dir logs --output-dir data/layer0_output",
+    "output": "data/layer0_output",
+    "elapsed": 2.06,
+    "returncode": 0,
+    "finished_at": "2026-03-01T06:20:35.900252+00:00"
+  },
+  "layer1": {
+    "status": "done",
+    "started_at": "2026-03-01T06:20:35.907066+00:00",
+    "command": "python run_layer1_llm_batch.py",
+    "output": "data/layer1_output",
+    "elapsed": 3716.83,
+    "returncode": 0,
+    "finished_at": "2026-03-01T07:22:32.739374+00:00"
+  },
+  "layer2": {
+    "status": "done",
+    "started_at": "2026-03-01T07:22:32.747819+00:00",
+    "command": "python run_layer2_analysis.py --no-ragflow",
+    "output": "data/layer2_output",
+    "elapsed": 1522.0,
+    "returncode": 0,
+    "finished_at": "2026-03-01T07:47:54.749834+00:00"
+  },
+  "layer3_p12": {
+    "status": "done",
+    "started_at": "2026-03-01T07:47:54.753312+00:00",
+    "command": "python run_layer3_phase12.py",
+    "output": "data/layer3_output/phase12_result.jsonl",
+    "elapsed": 0.18,
+    "returncode": 0,
+    "finished_at": "2026-03-01T07:47:54.930758+00:00"
+  },
+  "layer3_p34": {
+    "status": "done",
+    "started_at": "2026-03-01T07:47:54.934762+00:00",
+    "command": "python run_layer3_phase34.py",
+    "output": "data/layer3_output/phase34_consolidated.jsonl",
+    "elapsed": 0.19,
+    "returncode": 0,
+    "finished_at": "2026-03-01T07:47:55.130066+00:00"
+  },
+  "layer3_p5": {
+    "status": "done",
+    "started_at": "2026-03-01T07:47:55.135066+00:00",
+    "command": "python run_layer3_phase5.py",
+    "output": "data/layer3_output/phase5_klm_registry.jsonl",
+    "elapsed": 0.26,
+    "returncode": 0,
+    "finished_at": "2026-03-01T07:47:55.401807+00:00"
+  },
+  "layer4": {
+    "status": "done",
+    "started_at": "2026-03-01T07:49:07.748692+00:00",
+    "command": "python run_layer4_gap_dispatch.py --no-crawl",
+    "output": "data/layer4_output/gap_dispatch_summary.json",
+    "elapsed": 0.17,
+    "returncode": 0,
+    "finished_at": "2026-03-01T07:49:07.915787+00:00"
+  }
+}

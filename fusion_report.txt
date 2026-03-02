@@ -1,0 +1,455 @@
+融合经验结果报告  共16条融合经验（原始经验池：171条）
+==========================================================================================
+
+[01] PROCEDURAL_NEG
+     融合ID : exp_consolidated_d8c70517ab
+     目标服务: Oracle WebLogic Server
+     CVE漏洞 : CVE-2017-10271, CVE-2019-2725, CVE-2020-14882
+     成熟度  : consolidated  p_fused=0.92  原始经验=13条  来源Session=4个
+     失败维度: DEF/PATCHED
+     IF 触发条件:
+       在 Oracle WebLogic Server 攻击阶段，对 wls-wsat 端点（如 CoordinatorPortType、RegistrationPortTypeRPC）访问均返回 HTTP 500 错误
+     THEN 后续建议 (5条):
+       · 尝试 CVE-2020-14882 未授权访问漏洞，通过 /console/css/%%2e 路径绕过认证
+       · 探测其他漏洞如 CVE-2019-2725（XMLDecoder 反序列化）或 CVE-2018-2894（Java 反序列化）
+       · 使用 CVE-2017-10271 的 wls-wsat 组件 RCE 漏洞作为替代攻击向量
+       · 测试CVE-2019-2729（WebLogic反序列化漏洞），使用不同的反序列化gadget链
+       · 尝试使用CVE-2020-2551的IIOP协议漏洞进行远程代码执行
+     NOT 禁令 (1条):
+       · 继续重试已返回 HTTP 500 的 wls-wsat 端点，假设补丁可绕过
+     避免模式: 目标对 `generic_linux_command` 攻击存在防御（PATCHED），应尝试绕过或换策略。证据：stdout显示多个端点返回状态500，包括/wls-wsat/CoordinatorPortType和/wls-wsat/R
+     失败详情: {'trigger_condition': '对多个 wls-wsat 端点访问返回 HTTP 500 错误', 'interpretation': '目标可能已应用补丁（如 PSU）或存在防御机制，导致已知漏洞路径失效', 'certai
+     ── 原始来源经验 (13条 → 1条融合) ──
+       exp_5db69512_0007  [sess=5db69512]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=在 Oracle WebLogic Server 攻击阶段，对 wls-wsat 端点（如 Coor
+       exp_8cb881bb_0021  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对 WebLogic Server 的 XMLDecoder 反序列化攻击均返回 HTTP 500
+       exp_8cb881bb_0018  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对WebLogic Server使用CVE-2017-10271漏洞利用时，返回HTTP 500且
+       exp_8cb881bb_0008  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对Oracle WebLogic Server的wls-wsat端点进行CVE-2017-1027
+       exp_64227b8f_0019  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对 Oracle WebLogic Server 的 CVE-2019-2725 漏洞利用（XML
+       exp_64227b8f_0016  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对WebLogic Server执行CVE-2017-10271的execute_code攻击时，
+       exp_64227b8f_0015  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对WebLogic Server的wls-wsat端点执行CVE-2017-10271的execu
+       exp_64227b8f_0014  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对 Oracle WebLogic Server wls-wsat 端点测试 CVE-2017-1
+       exp_64227b8f_0013  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对 Oracle WebLogic Server 测试 CVE-2020-14882 的多个载荷时
+       exp_64227b8f_0012  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对 Oracle WebLogic Server 测试 CVE-2020-14882 路径时，收到
+       exp_d1bd6e0b_0015  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对WebLogic服务器尝试CVE-2017-10271漏洞利用时，所有payload返回HTTP
+       exp_d1bd6e0b_0009  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对 Oracle WebLogic Server 的 wls-wsat 端点执行漏洞利用时，返回 
+       exp_d1bd6e0b_0007  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=PATCHED | IF=针对 Oracle WebLogic Server 的 wls-wsat 端点执行 CVE-2017
+
+[02] FACTUAL_RULE
+     融合ID : exp_consolidated_c0119869cb
+     目标服务: Oracle WebLogic Server
+     CVE漏洞 : CVE-2017-10271, CVE-2019-2725, CVE-2020-14882
+     成熟度  : consolidated  p_fused=0.93  原始经验=12条  来源Session=4个
+     服务类型: http  攻击阶段: RECON_WEAPONIZATION
+     发现的事实 (12条):
+       [open_port=5005/tcp] service=avt-profile-2? occurrence=4
+       [open_port=5556/tcp] service=tcpwrapped occurrence=4
+       [open_port=8000/tcp] service=http occurrence=4
+       [open_port=7001/tcp] service=http occurrence=4
+       [open_port=4444/tcp] service=tcpwrapped occurrence=2
+       [http_status=302] service= occurrence=2
+       [output_summary=Listening on 0.0.0.0 4444] service= occurrence=1
+       [output_summary=Testing T3 protocol connection...] service= occurrence=1
+       [open_port=50000/tcp] service=tcpwrapped occurrence=1
+       [service_version=Servlet/2.5] service= occurrence=1
+       ...还有2条
+     ── 原始来源经验 (12条 → 1条融合) ──
+       exp_5db69512_0002  [sess=5db69512]  [FACTUAL]  3条事实 svc=http
+       exp_5db69512_0001  [sess=5db69512]  [FACTUAL]  1条事实 svc=http
+       exp_8cb881bb_0005  [sess=8cb881bb]  [FACTUAL]  1条事实 svc=generic
+       exp_8cb881bb_0004  [sess=8cb881bb]  [FACTUAL]  1条事实 svc=generic
+       exp_8cb881bb_0003  [sess=8cb881bb]  [FACTUAL]  1条事实 svc=http
+       exp_8cb881bb_0002  [sess=8cb881bb]  [FACTUAL]  4条事实 svc=http
+       exp_8cb881bb_0001  [sess=8cb881bb]  [FACTUAL]  1条事实 svc=http
+       exp_64227b8f_0001  [sess=64227b8f]  [FACTUAL]  6条事实 svc=http
+       exp_d1bd6e0b_0004  [sess=d1bd6e0b]  [FACTUAL]  3条事实 svc=http
+       exp_d1bd6e0b_0003  [sess=d1bd6e0b]  [FACTUAL]  1条事实 svc=http
+       exp_d1bd6e0b_0002  [sess=d1bd6e0b]  [FACTUAL]  3条事实 svc=http
+       exp_d1bd6e0b_0001  [sess=d1bd6e0b]  [FACTUAL]  1条事实 svc=http
+
+[03] PROCEDURAL_NEG
+     融合ID : exp_consolidated_917b1a2745
+     目标服务: Oracle WebLogic Server
+     CVE漏洞 : CVE-2017-10271, CVE-2019-2725, CVE-2020-14882
+     成熟度  : consolidated  p_fused=0.87  原始经验=12条  来源Session=3个
+     失败维度: DEF/AUTHENTICATION
+     IF 触发条件:
+       针对 WebLogic Server 的弱口令爆破攻击均返回 HTTP 302 认证失败
+     THEN 后续建议 (5条):
+       · 使用 CVE-2020-14882 的未授权 RCE 漏洞绕过认证直接获取访问
+       · 尝试 CVE-2019-2729 的 IIOP 反序列化漏洞进行远程代码执行
+       · 尝试CVE-2019-2725反序列化漏洞，通过_wls-wsat/CoordinatorPortType端点执行命令
+       · 使用CVE-2020-14750漏洞绕过认证，通过T3协议发送恶意序列化对象
+       · 使用hydra工具进行更全面的WebLogic凭证爆破（支持多种协议和字典）
+     NOT 禁令 (1条):
+       · 不应继续爆破常见弱口令或依赖默认凭据
+     避免模式: 目标对 `generic_linux_command` 攻击存在防御（AUTHENTICATION），应尝试绕过或换策略。证据：stdout显示所有尝试的WebLogic凭据均返回HTTP 302状态码，表明认证失败，目标服务器拒绝了登录请
+     失败详情: {'trigger_condition': 'WebLogic 管理控制台登录尝试均返回 HTTP 302 状态码', 'interpretation': '所有测试凭据认证失败，表明目标使用非默认或强密码，阻止了弱口令攻击', 'cert
+     ── 原始来源经验 (12条 → 1条融合) ──
+       exp_8cb881bb_0022  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对 WebLogic Server 的弱口令爆破攻击均返回 HTTP 302 认证失败
+       exp_8cb881bb_0012  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对Oracle WebLogic Server使用默认凭据登录控制台时，收到HTTP 302重定向
+       exp_8cb881bb_0011  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对Oracle WebLogic Server的控制台登录端点进行认证尝试时，收到HTTP 302
+       exp_8cb881bb_0010  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对Oracle WebLogic Server管理接口进行默认凭证爆破时，所有尝试均返回HTTP 
+       exp_64227b8f_0011  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对 Oracle WebLogic Server 进行未授权访问测试时，收到 HTTP 302 重
+       exp_64227b8f_0010  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=WebLogic 控制台多个常见凭据认证均失败（返回 302）
+       exp_64227b8f_0009  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=WebLogic 控制台默认凭据认证失败并返回 302 重定向
+       exp_d1bd6e0b_0019  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对 Oracle WebLogic Server 控制台提交登录请求后，响应仍为登录页面且无成功认
+       exp_d1bd6e0b_0018  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对 Oracle WebLogic Server 控制台进行暴力破解时，所有尝试的凭据组合均返回密
+       exp_d1bd6e0b_0017  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对WebLogic服务器进行密码爆破时，所有尝试均返回明确的密码错误信息
+       exp_d1bd6e0b_0016  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对WebLogic服务器进行基于上下文的密码爆破时，所有尝试均返回登录页面重定向
+       exp_d1bd6e0b_0014  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=AUTHENTICATION | IF=针对WebLogic服务器进行默认凭据爆破时，所有尝试均返回登录页面重定向
+
+[04] PROCEDURAL_POS
+     融合ID : exp_consolidated_177b49a1f1
+     目标服务: Apache Druid
+     CVE漏洞 : CVE-2021-25646
+     成熟度  : raw  p_fused=0.72  原始经验=10条  来源Session=1个
+     工具: execute_code
+     前置条件 (5条):
+       · 目标存在可利用的远程代码执行/命令注入漏洞
+       · 目标 HTTP/HTTPS 服务可访问
+       · Python 脚本执行环境可用
+       · 目标存在代码执行或命令注入入口
+       · Java 应用管理接口可访问（Druid/Actuator）
+     成功指标 (3条):
+       · root:*:18758:0:
+       · root:x:0:0:
+       · root:x:0:0:root:/
+     命令模板: import json
+import requests
+
+# Read the full coordinator-overlord runtime.properties file
+config_file = "/opt/druid/conf/druid/single-server/nano-quickstart/coordinator-overlord/runtime.properties"
+
+u...
+     ── 原始来源经验 (10条 → 1条融合) ──
+       exp_f9af8981_0031  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0027  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0026  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0025  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0023  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0022  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0020  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0019  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0017  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+       exp_f9af8981_0016  [sess=f9af8981]  [PROCEDURAL_POS]  成功经验 steps=0
+
+[05] METACOGNITIVE
+     融合ID : exp_consolidated_6f8b152cce
+     目标服务: 
+     CVE漏洞 : 无
+     成熟度  : validated  p_fused=1.00  原始经验=9条  来源Session=9个
+     决策错误 (5条):
+       错误: 在信息收集阶段，对目标服务（Apache Druid）的版本和具体配置信息收集不充分，导致后续利用尝试存在盲目性。
+         规则: RECON_FOCUS：IF 识别出特定服务（如Apache Druid）THEN 优先使用针对性工具或查询已知API路径进行深度信息收集，而非通用扫描。
+       错误: 在成功利用文件读取漏洞后，未能系统性地利用读取到的敏感信息（如环境变量、配置文件）来规划权限提升路径。
+         规则: POST_EXPLOIT_ANALYSIS：IF 成功读取到配置文件或环境变量 THEN 立即分析其中包含的密钥、路径、依赖服务信息，用于构造后续攻击。
+       错误: 在遇到DEF/ACTIVE_BLOCKING和DEF/AUTHENTICATION等防御性失败后，没有及时调整攻击载荷或尝试绕过技术。
+         规则: DEFENSE_EVASION：IF 同类攻击载荷连续被阻断或认证失败 THEN 切换编码方式、使用替代API端点或尝试权限旁路技术。
+     关键经验 (18条):
+       · RECON_BEFORE_EXPLOIT：IF 目标为已知应用服务（如WebLogic）THEN 在发起利用前，必须通过版本探测、补丁信息收集、WAF/IPS指纹识别等方式确认其脆弱性状态。
+       · TOOL_VALIDATION：IF 使用复杂命令行工具（如 nmap） THEN 首次调用前使用 `--help` 或简单参数验证工具可用性
+       · PIVOT_ON_DEFENSE：IF 针对同一服务的已知漏洞利用连续失败超过3次且根因为DEF/PATCHED THEN 应立即暂停，重新评估攻击面，转向配置审计、凭证爆破或关联服务攻击。
+       · LOOPBACK_NETWORK_TEST：IF 目标网络拓扑推断为loopback或内网 THEN 在尝试依赖外连的利用前，应先使用DNS/HTTP出网检测命令验证目标的网络连通性。
+       · RECON_FOCUS：IF 识别出特定服务（如Apache Druid）THEN 优先使用针对性工具或查询已知API路径进行深度信息收集，而非通用扫描。
+       · POST_EXPLOIT_ANALYSIS：IF 成功读取到配置文件或环境变量 THEN 立即分析其中包含的密钥、路径、依赖服务信息，用于构造后续攻击。
+       · DEFENSE_EVASION：IF 同类攻击载荷连续被阻断或认证失败 THEN 切换编码方式、使用替代API端点或尝试权限旁路技术。
+       · POST_EXPLOIT_PRIORITY：IF 已获得高权限 Shell 并确认目标 THEN 优先执行信息收集和权限维持命令，而非尝试新的横向移动或暴力破解工具
+       · PATH_SWITCH：IF 同类攻击命令连续返回 3 次 unknown 或 failure THEN 强制切换到基于新信息的替代攻击路径
+       · RECON_VALIDATION：IF 使用扫描工具（如nmap、gobuster）THEN 必须先验证命令语法和参数组合的正确性
+       · ENV_PREP_RULE：IF 准备发起渗透攻击 THEN 必须预先检查并确保攻击机已安装所有必需的工具和依赖
+       · PATCH_CHECK_RULE：IF 针对同一服务的多个已知高危漏洞利用连续失败（根因为DEF/PATCHED）THEN 应假设目标已打补丁，并立即转向其他攻击面（如配置错误、弱凭证）
+       · RECON_DEPTH_RULE：IF 目标为WebLogic等复杂中间件 THEN 在exploit前必须完成版本识别、路径枚举、管理接口发现及防护设备（如WAF）探测
+       · LOOPBACK_VALIDATION：IF 目标为 loopback/内网环境 THEN 在尝试 RCE 前，必须先使用 ping、curl 或 wget 等命令验证目标与攻击机的双向网络连通性。
+       · BLIND_EXECUTION_SWITCH：IF 针对同一漏洞的 RCE 尝试连续 3 次返回成功状态码但无有效回显 THEN 应立即停止，转为尝试文件写入、DNS/HTTP 外带或使用反弹 shell 等非回显利用方式。
+       · VERSION_SPECIFIC_RECON：IF 目标为已知漏洞的特定服务（如 Apache Druid） THEN 在发起 exploit 前，必须通过 HTTP 响应头、默认页面、API 接口等方式精确获取其版本号，并与漏洞库匹配。
+       · RECON_FIRST：IF 目标为数据库服务 THEN 在发起 exploit 前，必须完成版本识别、配置枚举和接口探测
+       · DEF_BYPASS：IF 攻击失败根因为 DEF/AUTHENTICATION 或 DEF/PATCHED THEN 优先分析防御模式并尝试认证绕过或未修补漏洞
+     ── 原始来源经验 (9条 → 1条融合) ──
+       exp_f9af8981_0032  [sess=f9af8981]  [METACOGNITIVE]  3条教训
+       exp_b3ab5c15_0012  [sess=b3ab5c15]  [METACOGNITIVE]  2条教训
+       exp_5db69512_0009  [sess=5db69512]  [METACOGNITIVE]  3条教训
+       exp_8cb881bb_0026  [sess=8cb881bb]  [METACOGNITIVE]  3条教训
+       exp_d1bd6e0b_0020  [sess=d1bd6e0b]  [METACOGNITIVE]  3条教训
+       exp_64227b8f_0020  [sess=64227b8f]  [METACOGNITIVE]  4条教训
+       exp_85cd2e37_0012  [sess=85cd2e37]  [METACOGNITIVE]  3条教训
+       exp_b88633db_0013  [sess=b88633db]  [METACOGNITIVE]  3条教训
+       exp_7d4c1a6a_0012  [sess=7d4c1a6a]  [METACOGNITIVE]  3条教训
+
+[06] FACTUAL_RULE
+     融合ID : exp_consolidated_1fdedc9f1f
+     目标服务: CouchDB
+     CVE漏洞 : CVE-2022-24706
+     成熟度  : validated  p_fused=0.81  原始经验=9条  来源Session=2个
+     服务类型: nosql  攻击阶段: EXPLOITATION
+     发现的事实 (13条):
+       [open_port=5005/tcp] service=avt-profile-2 occurrence=2
+       [open_port=8000/tcp] service=http-alt occurrence=2
+       [open_port=5984/tcp] service=couchdb? occurrence=2
+       [file_read_passwd=系统用户: root, 无普通用户] service= occurrence=1
+       [privilege_root=uid=0(root) — 已获取 root 权限] service= occurrence=1
+       [auth_bypass=认证绕过/登录成功] service= occurrence=1
+       [cve_mentioned=CVE-2022-24706] service= occurrence=1
+       [output_summary=name couchdb at port 9100] service= occurrence=1
+       [open_port=4369/tcp] service=epmd occurrence=1
+       [open_port=9100/tcp] service=jetdirect occurrence=1
+       ...还有3条
+     ── 原始来源经验 (9条 → 1条融合) ──
+       exp_b3ab5c15_0005  [sess=b3ab5c15]  [FACTUAL]  1条事实 svc=nosql
+       exp_b3ab5c15_0004  [sess=b3ab5c15]  [FACTUAL]  3条事实 svc=nosql
+       exp_b3ab5c15_0003  [sess=b3ab5c15]  [FACTUAL]  1条事实 svc=nosql
+       exp_b3ab5c15_0002  [sess=b3ab5c15]  [FACTUAL]  4条事实 svc=http
+       exp_b3ab5c15_0001  [sess=b3ab5c15]  [FACTUAL]  1条事实 svc=database
+       exp_b88633db_0004  [sess=b88633db]  [FACTUAL]  3条事实 svc=http
+       exp_b88633db_0003  [sess=b88633db]  [FACTUAL]  1条事实 svc=http
+       exp_b88633db_0002  [sess=b88633db]  [FACTUAL]  1条事实 svc=nosql
+       exp_b88633db_0001  [sess=b88633db]  [FACTUAL]  1条事实 svc=database
+
+[07] FACTUAL_RULE
+     融合ID : exp_consolidated_2fc6f51cdb
+     目标服务: Apache Druid
+     CVE漏洞 : CVE-2021-25646
+     成熟度  : validated  p_fused=0.81  原始经验=8条  来源Session=2个
+     服务类型: http  攻击阶段: EXPLOITATION
+     发现的事实 (7条):
+       [open_port=8888/tcp] service=sun-answerbook? occurrence=2
+       [file_read_shadow=成功读取 /etc/shadow — 含密码哈希（root 账户可发现）] service= occurrence=1
+       [file_read_passwd=成功读取 /etc/passwd 内容] service= occurrence=1
+       [open_port=4444/tcp] service=tcpwrapped\\n5005/tcp occurrence=1
+       [http_status=302] service= occurrence=1
+       [output_summary=[+] Response status code: 200] service= occurrence=1
+       [open_port=8000/tcp] service=http-alt occurrence=1
+     ── 原始来源经验 (8条 → 1条融合) ──
+       exp_f9af8981_0005  [sess=f9af8981]  [FACTUAL]  1条事实 svc=http
+       exp_f9af8981_0004  [sess=f9af8981]  [FACTUAL]  1条事实 svc=http
+       exp_f9af8981_0003  [sess=f9af8981]  [FACTUAL]  1条事实 svc=http
+       exp_f9af8981_0002  [sess=f9af8981]  [FACTUAL]  1条事实 svc=http
+       exp_f9af8981_0001  [sess=f9af8981]  [FACTUAL]  1条事实 svc=http
+       exp_85cd2e37_0003  [sess=85cd2e37]  [FACTUAL]  1条事实 svc=http
+       exp_85cd2e37_0002  [sess=85cd2e37]  [FACTUAL]  1条事实 svc=http
+       exp_85cd2e37_0001  [sess=85cd2e37]  [FACTUAL]  1条事实 svc=http
+
+[08] PROCEDURAL_NEG
+     融合ID : exp_consolidated_b2607ec991
+     目标服务: Apache Druid
+     CVE漏洞 : CVE-2021-25646
+     成熟度  : validated  p_fused=0.78  原始经验=8条  来源Session=2个
+     失败维度: INT/INCOMPLETE_RECON
+     IF 触发条件:
+       针对Apache Druid的侦察阶段，对/debug路径的HTTP请求返回404 Not Found
+     THEN 后续建议 (7条):
+       · 探测Apache Druid的CVE-2019-12384信息泄露漏洞路径/druid/coordinator/v1/metadata
+       · 使用目录爆破探测Apache Druid管理界面路径（如/console、/web-console）
+       · 测试Apache Druid的CVE-2021-25646远程代码执行漏洞路径/druid/indexer/v1/sampler
+       · 使用dirsearch工具进行目录爆破以发现有效管理接口
+       · 使用nmap进行端口扫描以确认服务实际监听端口
+       · 尝试访问Apache Druid的默认管理路径/druid/index.html或/druid/coordinator/v1/leader
+       · 检查是否存在未授权访问的管理端点
+     NOT 禁令 (1条):
+       · 不应继续尝试访问不存在的调试接口
+     避免模式: 对目标情报判断有误（INCOMPLETE_RECON），应补充侦察后再行动。证据：stdout 显示 '404 Not Found'，表明目标 URL 不存在，返回码为 None 但输出确认请求失败。。工具调用返回了 HTTP 404 错误
+     失败详情: {'trigger_condition': '对Apache Druid /debug路径的HTTP请求返回404 Not Found', 'interpretation': '目标靶机未启用调试接口，或Apache Druid配置中隐藏了
+     ── 原始来源经验 (8条 → 1条融合) ──
+       exp_f9af8981_0014  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Apache Druid的侦察阶段，对/debug路径的HTTP请求返回404 Not Foun
+       exp_f9af8981_0012  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Apache Druid的侦察阶段，对/console路径的HTTP请求返回404 Not Fo
+       exp_f9af8981_0011  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Apache Druid的侦察阶段，对根路径的HTTP请求返回404 Not Found
+       exp_f9af8981_0009  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Apache Druid进行管理界面侦察时，访问/admin路径返回HTTP 404错误
+       exp_f9af8981_0008  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Apache Druid进行API侦察时，访问/api路径返回HTTP 404错误
+       exp_f9af8981_0007  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Apache Druid进行侦察时，使用错误端口访问返回HTTP 404错误
+       exp_85cd2e37_0009  [sess=85cd2e37]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Apache Druid服务进行侦察时，使用错误端口导致HTTP 404错误
+       exp_85cd2e37_0005  [sess=85cd2e37]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=对Apache Druid服务进行侦察时，curl命令返回HTTP 302重定向但输出不完整
+
+[09] PROCEDURAL_NEG
+     融合ID : exp_consolidated_cfd4e743f0
+     目标服务: Oracle WebLogic Server
+     CVE漏洞 : CVE-2017-10271, CVE-2019-2725, CVE-2020-14882
+     成熟度  : consolidated  p_fused=0.91  原始经验=7条  来源Session=4个
+     失败维度: INT/INCOMPLETE_RECON
+     IF 触发条件:
+       在 Oracle WebLogic Server 侦察阶段，对非标准端口（如 8000）访问返回 HTTP 404 错误
+     THEN 后续建议 (5条):
+       · 使用nmap进行端口扫描确认WebLogic实际监听端口（命令：nmap -sV -p 7000-7010,8000-8010 {TARGET}）
+       · 枚举 WebLogic 特定管理端点，如 /wls-wsat、/bea_wls_deployment_internal、/console
+       · 测试 CVE-2017-10271 相关路径 /wls-wsat/CoordinatorPortType，使用 XML 反序列化载荷
+       · 使用CVE-2020-14882漏洞路径/console/css/%252e%252e%252fconsole.portal进行未授权访问测试
+       · 执行实际侦察命令以探测 WebLogic 版本信息（如通过 HTTP 头或错误页面）
+     NOT 禁令 (1条):
+       · 继续盲目攻击非标准端口或假设服务运行在默认配置下
+     避免模式: 对目标情报判断有误（INCOMPLETE_RECON），应补充侦察后再行动。证据：stdout 显示 'Cannot GET /'，表明目标服务返回 404 错误，但调用参数使用 http://{TARGET}:8000，与渗透目标 htt
+     失败详情: {'trigger_condition': '侦察阶段对目标服务端口访问返回 HTTP 404 错误', 'interpretation': '侦察信息不完整或错误，导致访问了错误的端口或服务端点', 'certainty': 'high'
+     ── 原始来源经验 (7条 → 1条融合) ──
+       exp_5db69512_0004  [sess=5db69512]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=在 Oracle WebLogic Server 侦察阶段，对非标准端口（如 8000）访问返回 H
+       exp_8cb881bb_0024  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对 Oracle WebLogic Server 进行路径枚举时，所有通用路径返回 404 错误
+       exp_8cb881bb_0007  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Oracle WebLogic Server进行侦察时，HTTP GET请求返回'Cannot 
+       exp_64227b8f_0008  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对 WebLogic 服务的侦察命令执行成功但无输出结果
+       exp_64227b8f_0007  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对 WebLogic 服务的目录扫描仅返回有限结果（如仅 /console）
+       exp_d1bd6e0b_0011  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Oracle WebLogic Server攻击时，使用错误端口导致HTTP 404错误
+       exp_d1bd6e0b_0010  [sess=d1bd6e0b]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Oracle WebLogic Server进行侦察时，curl请求根路径返回HTTP 404错
+
+[10] RAG_EVALUATION
+     融合ID : exp_consolidated_9ec8d7b0b7
+     目标服务: 
+     CVE漏洞 : 无
+     成熟度  : validated  p_fused=0.97  原始经验=6条  来源Session=6个
+     核心洞察: RAG系统在渗透测试中能有效弥补测试人员对特定、复杂漏洞利用知识的即时缺口，通过提供精确的漏洞利用代码或步骤，直接指导攻击执行，从而提高测试效率与成功率。其效用高度依赖于查询的精确性与知识库中相关记录的匹配度。
+     采纳率: 39%
+     改进建议 (3条):
+       · 采纳率仅 38.9%（7/18 次检索被使用）：建议提高检索精度（调高相似度阈值或缩小 top-k），减少低相关经验的噪声干扰。
+       · session 间 BAR 分标准差 0.162 偏高，各 session 检索效果差异显著：建议按攻击目标类型（WebLogic/Druid/CouchDB）分桶索引，减少跨类别语义干扰。
+       · 低 BAR session（85cd2e37）共 1 个：建议回溯其检索 query 类型，判断是否因 METACOGNITIVE 层泛化 query 偏多所致，可考虑为 METACOGNITIVE / CONCEPTU
+     ── 原始来源经验 (6条 → 1条融合) ──
+       exp_f9af8981_0034  [sess=f9af8981]  [RAG_EVALUATION]  adoption_rate=0%
+       exp_b3ab5c15_0014  [sess=b3ab5c15]  [RAG_EVALUATION]  adoption_rate=0%
+       exp_5db69512_0011  [sess=5db69512]  [RAG_EVALUATION]  adoption_rate=0%
+       exp_8cb881bb_0028  [sess=8cb881bb]  [RAG_EVALUATION]  adoption_rate=0%
+       exp_d1bd6e0b_0022  [sess=d1bd6e0b]  [RAG_EVALUATION]  adoption_rate=0%
+       exp_85cd2e37_0014  [sess=85cd2e37]  [RAG_EVALUATION]  adoption_rate=0%
+
+[11] PROCEDURAL_NEG
+     融合ID : exp_consolidated_9710cfa537
+     目标服务: Oracle WebLogic Server
+     CVE漏洞 : CVE-2017-10271
+     成熟度  : validated  p_fused=0.79  原始经验=5条  来源Session=2个
+     失败维度: DEF/ACTIVE_BLOCKING
+     IF 触发条件:
+       针对 Oracle WebLogic Server 进行命令执行攻击时，工具返回 HTTP 500 错误，表明存在主动防御机制
+     THEN 后续建议 (5条):
+       · 测试 CVE-2020-14882 的未授权绕过路径 /console/css/%252e%252e%252fconsole.portal
+       · 尝试 CVE-2019-2725 的 XMLDecoder 反序列化漏洞，使用 ysoserial 生成 payload
+       · 尝试绕过 WAF/IDS，使用编码或混淆技术，如 Base64 编码、十六进制编码载荷
+       · 尝试使用JNDI注入攻击（如CVE-2021-2109）替代XMLDecoder利用
+       · 使用不同的HTTP方法（如GET代替POST）或添加混淆头部绕过防御
+     NOT 禁令 (1条):
+       · 不应继续使用相同的命令执行脚本或 generic_linux_command 工具重试，避免触发防御告警
+     避免模式: 目标对 `generic_linux_command` 攻击存在防御（ACTIVE_BLOCKING），应尝试绕过或换策略。证据：stderr显示'Command execution failed, status: 500'，表明目标服务器
+     失败详情: {'trigger_condition': 'WebLogic Server 在尝试命令执行时返回 HTTP 500 错误', 'interpretation': '目标服务器对命令执行请求进行了主动拦截或防御，可能已应用补丁或部署了安全设
+     ── 原始来源经验 (5条 → 1条融合) ──
+       exp_5db69512_0008  [sess=5db69512]  [PROCEDURAL_NEG]  失败维度=ACTIVE_BLOCKING | IF=针对 Oracle WebLogic Server 进行命令执行攻击时，工具返回 HTTP 500 
+       exp_8cb881bb_0025  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=ACTIVE_BLOCKING | IF=针对 Oracle WebLogic Server 执行代码攻击时，服务器返回 500 错误且提示 
+       exp_8cb881bb_0017  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=ACTIVE_BLOCKING | IF=针对WebLogic Server进行漏洞利用时，多个攻击向量均返回HTTP 500且错误信息显示X
+       exp_8cb881bb_0016  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=ACTIVE_BLOCKING | IF=针对WebLogic Server的uddiexplorer端点进行SOAP注入攻击时，返回HTML
+       exp_8cb881bb_0013  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=ACTIVE_BLOCKING | IF=针对Oracle WebLogic Server的T3协议漏洞利用时，payload发送后出现超时无
+
+[12] FACTUAL_LLM
+     融合ID : exp_consolidated_84c5d83136
+     目标服务: Oracle WebLogic Server
+     CVE漏洞 : CVE-2017-10271, CVE-2019-2725, CVE-2020-14882
+     成熟度  : consolidated  p_fused=0.94  原始经验=4条  来源Session=4个
+     整体利用状态: fused
+     CVE 漏洞利用图 (3个CVE):
+       CVE-2017-10271: confidence=0.56  status=patched-HTTP500  9条命令
+         $ curl -v http://{TARGET}:7001/console/css/%%2e%%2e%%2fconsole.portal
+         $ python3 weblogic_cve_2019_2725.py http://{TARGET}:7001/_async/AsyncResponseServi...
+         $ python3 -c "import requests; target='http://{TARGET}:{PORT}'; r=requests.get(tar...
+         $ nmap -sV -p 7001,7002,9002,8000 {TARGET}
+         ...还有5条
+       CVE-2020-14882: confidence=1.00  status=patched-HTTP500 / requires-auth  7条命令
+         $ curl -v http://{TARGET}:7001/console/css/%%2e%%2e%%2fconsole.portal
+         $ python3 weblogic_cve_2019_2725.py http://{TARGET}:7001/_async/AsyncResponseServi...
+         $ python3 -c "import requests; target='http://{TARGET}:{PORT}'; r=requests.get(tar...
+         $ nmap -sV -p 7001,7002,9002,8000 {TARGET}
+         ...还有3条
+       CVE-2019-2725: confidence=1.00  status=partial-HTTP200无回显  7条命令
+         $ curl -v http://{TARGET}:7001/console/css/%%2e%%2e%%2fconsole.portal
+         $ python3 weblogic_cve_2019_2725.py http://{TARGET}:7001/_async/AsyncResponseServi...
+         $ python3 -c "import requests; target='http://{TARGET}:{PORT}'; r=requests.get(tar...
+         $ nmap -sV -p 7001,7002,9002,8000 {TARGET}
+         ...还有3条
+     未探索CVE: ['CVE-2020-14883', 'CVE-2019-2729', 'CVE-2020-14750', 'CVE-2021-2109']
+     ── 原始来源经验 (4条 → 1条融合) ──
+       exp_5db69512_0003  [sess=5db69512]  [FACTUAL]  0条事实 svc=
+       exp_8cb881bb_0006  [sess=8cb881bb]  [FACTUAL]  0条事实 svc=
+       exp_64227b8f_0002  [sess=64227b8f]  [FACTUAL]  0条事实 svc=
+       exp_d1bd6e0b_0005  [sess=d1bd6e0b]  [FACTUAL]  0条事实 svc=
+
+[13] PROCEDURAL_NEG
+     融合ID : exp_consolidated_5cef979fb7
+     目标服务: Apache Druid
+     CVE漏洞 : CVE-2021-25646
+     成熟度  : raw  p_fused=0.72  原始经验=4条  来源Session=1个
+     失败维度: INT/INCOMPLETE_RECON
+     IF 触发条件:
+       针对 Apache Druid 目标执行代码攻击时出现 CouchDB 配置文件读取失败
+     THEN 后续建议 (6条):
+       · 使用 CVE-2021-25646 漏洞针对 Druid 进行攻击，避免依赖无关软件配置
+       · 通过 /druid/indexer/v1/sampler 端点执行系统命令确认实际环境
+       · 利用CVE-2021-36749遍历Druid安装目录寻找日志文件，如使用/opt/druid/var/log/*模式
+       · 通过Druid的JNDI注入执行系统命令查找日志文件，如ls -la /opt/druid/var/log/
+       · 通过Druid的JNDI注入执行系统命令查找flag文件，如使用find / -name '*flag*' 2>/dev/null
+       · 尝试利用Apache Druid的CVE-2020-13697 SSRF漏洞路径/druid/indexer/v1/sampler
+     NOT 禁令 (3条):
+       · 不应基于错误情报继续尝试 CouchDB 相关攻击路径
+       · 不应继续尝试预设的固定日志文件路径
+       · 不应继续猜测和尝试有限的常见flag文件路径
+     避免模式: 对目标情报判断有误（INCOMPLETE_RECON），应补充侦察后再行动。证据：stdout 显示多个 CouchDB 配置文件尝试读取失败，提示 'File may not exist or access denied.'，表明目标可能
+     失败详情: {'trigger_condition': '尝试读取 CouchDB 配置文件时失败（File may not exist or access denied）', 'interpretation': '目标可能未安装 CouchDB 或路
+     ── 原始来源经验 (4条 → 1条融合) ──
+       exp_f9af8981_0030  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对 Apache Druid 目标执行代码攻击时出现 CouchDB 配置文件读取失败
+       exp_f9af8981_0024  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=在Apache Druid漏洞利用阶段，尝试读取标准日志文件路径均失败
+       exp_f9af8981_0021  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=在Apache Druid漏洞利用阶段，尝试读取常见flag文件位置均失败
+       exp_f9af8981_0013  [sess=f9af8981]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=针对Apache Druid的利用阶段，对/console路径的POST请求返回404 Not Fo
+
+[14] PROCEDURAL_NEG
+     融合ID : exp_consolidated_d5f7786535
+     目标服务: Oracle WebLogic Server
+     CVE漏洞 : CVE-2017-10271, CVE-2019-2725, CVE-2020-14882
+     成熟度  : consolidated  p_fused=0.85  原始经验=3条  来源Session=3个
+     失败维度: EFF/BLIND_EXECUTION
+     IF 触发条件:
+       在 Oracle WebLogic Server 攻击阶段，对 wls-wsat 端点（如 CoordinatorPortType）访问返回 HTTP 200 但无命令执行证据
+     THEN 后续建议 (6条):
+       · 使用 CVE-2017-10271 漏洞验证脚本，添加命令执行结果回显验证
+       · 尝试通过 wls-wsat 端点执行可验证的命令（如 whoami、id）并捕获输出
+       · 测试 CVE-2020-14882 的 /console/css/%%2e%%2e/console.portal 路径绕过认证
+       · 使用 CVE-2019-2725 的 XMLDecoder 反序列化漏洞尝试不同 payload 变体
+       · 使用CVE-2018-3191的T3反序列化漏洞进行带外检测，通过DNS或HTTP请求验证执行
+       · 尝试CVE-2020-2555的IIOP协议反序列化攻击，使用WebLogic的CORBA服务作为替代路径
+     NOT 禁令 (2条):
+       · 仅依赖 HTTP 状态码判断攻击成功，不进行结果验证
+       · 不应继续重试相同的 payload 或依赖反向 shell 连接
+     避免模式: `generic_linux_command` 执行效果不符预期（BLIND_EXECUTION），应验证实际效果。证据：stdout 返回 '200' 状态码，但 success 和 return_code 均为 None，无法确认命令是
+     失败详情: {'trigger_condition': '对 wls-wsat 端点访问返回 HTTP 200 但无明确执行结果', 'interpretation': '攻击执行盲目，无法确认漏洞是否成功利用或命令是否执行', 'certainty'
+     ── 原始来源经验 (3条 → 1条融合) ──
+       exp_5db69512_0005  [sess=5db69512]  [PROCEDURAL_NEG]  失败维度=BLIND_EXECUTION | IF=在 Oracle WebLogic Server 攻击阶段，对 wls-wsat 端点（如 Coor
+       exp_8cb881bb_0019  [sess=8cb881bb]  [PROCEDURAL_NEG]  失败维度=BLIND_EXECUTION | IF=针对 WebLogic Server 的 RCE 攻击返回 HTTP 500 且无反向 shell 
+       exp_64227b8f_0018  [sess=64227b8f]  [PROCEDURAL_NEG]  失败维度=BLIND_EXECUTION | IF=针对WebLogic Server的T3协议执行反序列化execute_code攻击时，payloa
+
+[15] CONCEPTUAL
+     融合ID : exp_consolidated_7d40eb739f
+     目标服务: Oracle WebLogic Server
+     CVE漏洞 : CVE-2017-10271, CVE-2018-2628, CVE-2019-2725
+     成熟度  : raw  p_fused=0.47  原始经验=3条  来源Session=3个
+     核心洞察: 核心洞察：针对 Oracle WebLogic 的 XML 反序列化漏洞利用，其成功高度依赖于目标版本是否已打补丁。攻击模式表现为对特定组件端点（如 wls-wsat）发起序列化载荷请求。当目标已修补时，攻击会因返回特定错误（如 HTTP 500）而失败。此规律表明，在利用此类漏洞前，必须先通过版本探测或响应特征验证补丁状态，避免盲目攻击。
+     适用条件 (1条):
+       · {'positive': ['目标系统为 Oracle WebLogic Server，且存在特定组件端点（如 wls-wsat 或 _async）', '攻击者尝试利用已知的 XML 反序列化漏洞（
+     补充洞察: 2条
+       · 核心洞察：当针对同一中间件（如 Oracle WebLogic）的多个已知高危 CVE 利用尝试均告失败时，表明目标系统很可能已全面应用了安全补丁或部署了有效的主动防御措施。这揭示了针对已广泛披露漏洞
+       · 核心洞察：当针对 Oracle WebLogic Server 多个已知高危反序列化漏洞（如 CVE-2017-10271、CVE-2018-2628、CVE-2019-2725）的利用尝试连续失败，
+     ── 原始来源经验 (3条 → 1条融合) ──
+       exp_5db69512_0010  [sess=5db69512]  [CONCEPTUAL]  核心洞察：针对 Oracle WebLogic 的 XML 反序列化漏洞利用，其成功高度依赖于目标版
+       exp_8cb881bb_0027  [sess=8cb881bb]  [CONCEPTUAL]  核心洞察：当针对同一中间件（如 Oracle WebLogic）的多个已知高危 CVE 利用尝试均告
+       exp_d1bd6e0b_0021  [sess=d1bd6e0b]  [CONCEPTUAL]  核心洞察：当针对 Oracle WebLogic Server 多个已知高危反序列化漏洞（如 CVE
+
+[16] PROCEDURAL_NEG
+     融合ID : exp_consolidated_82783497c5
+     目标服务: CouchDB
+     CVE漏洞 : 无
+     成熟度  : validated  p_fused=0.78  原始经验=3条  来源Session=2个
+     失败维度: INT/INCOMPLETE_RECON
+     IF 触发条件:
+       对 Apache CouchDB 目标进行侦察时根路径返回 'Cannot GET /'
+     THEN 后续建议 (5条):
+       · 扫描 CouchDB 默认端口 5984 和常见管理端点如 /_utils/、/_all_dbs
+       · 使用 nmap 或 curl 测试 CVE-2017-12635 相关路径 /_config 和 /_users
+       · 使用nmap进行端口扫描确认CouchDB实际服务端口
+       · 尝试访问CouchDB标准管理接口路径/_utils
+       · 使用 curl 探测其他敏感端点如 /_users 或 /_replicator 以获取用户或复制信息
+     NOT 禁令 (2条):
+       · 不应仅测试根路径就判断服务不可用
+       · 不应假设服务运行在标准端口或响应根路径，需要更全面的侦察
+     避免模式: 对目标情报判断有误（INCOMPLETE_RECON），应补充侦察后再行动。证据：stdout 显示 'Cannot GET /'，表明目标服务返回错误，但未提供足够信息确认服务状态或可用端点。。证据来自 stdout 中的 'Cannot
+     失败详情: {'trigger_condition': "curl 请求返回 'Cannot GET /' 错误", 'interpretation': '目标服务根路径不可访问，可能是服务未运行、路径错误或需要特定端点，对 CouchDB 的侦察不完
+     ── 原始来源经验 (3条 → 1条融合) ──
+       exp_b3ab5c15_0010  [sess=b3ab5c15]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=对 Apache CouchDB 目标进行侦察时根路径返回 'Cannot GET /'
+       exp_b88633db_0011  [sess=b88633db]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=侦察CouchDB服务时访问根路径（如/）返回'Cannot GET /' 404错误
+       exp_b88633db_0007  [sess=b88633db]  [PROCEDURAL_NEG]  失败维度=INCOMPLETE_RECON | IF=在 Apache CouchDB 侦察阶段，_active_tasks 端点返回空响应
+

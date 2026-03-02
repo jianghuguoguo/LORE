@@ -1,57 +1,49 @@
-# 爬虫系统基础依赖
+# RefPenTest – 核心依赖
+# 用于解析渗透测试代理日志并生成结构化 TurnSequence
 
-# Web界面
-Flask>=3.0.0
-flask-cors>=4.0.0
-
-# HTTP请求
-requests>=2.28.0
-
-# HTML解析
-beautifulsoup4>=4.11.0
-lxml>=4.9.0
-
-# RSS Feed解析
-feedparser>=6.0.10
-
-# 随机User-Agent
-fake-useragent>=1.2.0
-
-
-# 其他工具
-python-dateutil>=2.8.0
-trafilatura>=1.6.0
-
-# ATT&CK 知识库项目依赖
-
-# 基础库
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
-
-# STIX/TAXII 支持
-stix2>=3.0.0
-taxii2-client>=2.3.0
-
-# 数据处理
-python-dateutil>=2.8.0
-
-# 日志和进度条
+# ── 核心依赖 ────────────────────────────────────────────────────────────────
+pyyaml>=6.0
+python-dateutil>=2.8.2
 tqdm>=4.66.0
 
-# 语义去重所需的依赖库
+# ── Phase 3：LLM 集成依赖（OpenAI 兼容 SDK，支持 DeepSeek / OpenAI / Qwen 等） ──
+openai>=1.0.0
 
-# Sentence Transformers - 用于生成文本embedding
-sentence-transformers>=2.2.0
+# ── 测试依赖 ────────────────────────────────────────────────────────────────
+pytest>=7.4.0
+pytest-cov>=4.1.0
 
-# HNSW库 - 用于高效的近邻搜索
-hnswlib>=0.7.0
+# ── Phase 1-2：WeChat 爬取（APScheduler + SQLite，零外部服务依赖）────────────
+# 定时调度（替代 Celery Beat）
+apscheduler>=3.10
 
-# NumPy - 数值计算
-numpy>=1.21.0
+# UI 自动化（仅 Windows）
+# uiautomation>=2.0.18  # pip install uiautomation
+# pywin32>=306           # pip install pywin32
 
-# 如果使用GPU加速（可选）
-# torch>=2.0.0
+# HTTP 客户端（搜狗发现、社区同步）
+httpx>=0.27
 
-# 其他基础依赖（如果还没安装）
-requests>=2.28.0
+# HTML 解析（拦截器 + 搜狗解析 + RSS 全文提取）
+beautifulsoup4>=4.12
+lxml>=5.0
+
+# ── Layer 4 ：知识库主动维护层 ──────────────────────────────────────────────
+trafilatura>=1.8.0       # 网页正文提取（已安装）
+# apscheduler 已在上方声明且已安装
+
+# RSS/Atom Feed 解析
+feedparser>=6.0
+
+# SQLite 为 Python 内置，无需额外安装
+
+# ── Phase 3（后续）：数据清洗 ────────────────────────────────────────────────
+# datasketch>=1.6         # MinHash 近似去重：pip install datasketch
+# mitmproxy>=10.0         # MITM 拦截器：pip install mitmproxy
+
+# ── 可选：更快的 JSON 解析 ───────────────────────────────────────────────────
+# orjson>=3.9.0
+
+# ── 可选：类型检查 ────────────────────────────────────────────────────────────
+# mypy>=1.5.0
+# types-PyYAML>=6.0.0

@@ -11,25 +11,30 @@ import requests
 
 from crawlers.base_crawler import BaseCrawler
 from crawlers.csdn_crawler import CSDNVIPCrawler
-from crawlers.attack_crawler import MITREAttackCrawler
 from crawlers.github_crawler import GitHubCrawler
 from crawlers.qianxin_crawler import QiAnXinCrawler
 from crawlers.xianzhi_crawler import XianZhiCrawler
-from wechat_article_crawler import WeChatCrawler
 from crawlers.config import (
-    ENABLED_SOURCES, OUTPUT_BASE_DIR, 
-    RAGFLOW_API_KEY, RAGFLOW_BASE_URL, 
-    RAGFLOW_DATASET_ID, PUSH_TO_RAGFLOW, RAGFLOW_ONLY
+    ENABLED_SOURCES, OUTPUT_BASE_DIR,
+    RSS_FEEDS, RSS_MAX_ITEMS_PER_FEED,
 )
 
-# 尝试导入 RAGFlowClient
-try:
-    from processors.ragflow_client import RAGFlowClient
-except ImportError:
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from processors.ragflow_client import RAGFlowClient
+# WeChat 爬虫（搜狗模式）通过 wechat_crawler 子包独立调度，不在这里注册
+
+# RAGFlow 暂不可用，数据直接保存到 raw_data/ 目录
+PUSH_TO_RAGFLOW = False
+RAGFLOW_ONLY    = False
+RAGFLOW_API_KEY = ""
+RAGFLOW_BASE_URL = ""
+RAGFLOW_DATASET_ID = ""
+
+
+class RAGFlowClient:
+    """RAGFlow 占位存根 — 当前不可用，所有操作静默忽略。"""
+    def __init__(self, *a, **kw): pass
+    def push_json_experience(self, *a, **kw): return False
+    def push_document(self, *a, **kw): return False
+    def upload_document(self, *a, **kw): return False
 
 
 class CrawlerManager:
@@ -55,9 +60,6 @@ class CrawlerManager:
         if ENABLED_SOURCES.get('csdn', True):
             self.register_crawler('csdn', CSDNVIPCrawler(self.session))
 
-        if ENABLED_SOURCES.get('attack', True):
-            self.register_crawler('attack', MITREAttackCrawler(self.session))
-
         if ENABLED_SOURCES.get('github', True):
             self.register_crawler('github', GitHubCrawler(self.session))
 
@@ -67,8 +69,16 @@ class CrawlerManager:
         if ENABLED_SOURCES.get('xianzhi', True):
             self.register_crawler('xianzhi', XianZhiCrawler(self.session))
 
-        if ENABLED_SOURCES.get('wechat', True):
-            self.register_crawler('wechat', WeChatCrawler(self.session))
+        # RSS 轻量级爬虫（默认全部开启）
+        if ENABLED_SOURCES.get('rss', True):
+            try:
+                from crawlers.rss_crawler import RSSCrawler
+                for feed_name, feed_url in RSS_FEEDS.items():
+                    # xianzhi/qianxin 已有独立深度爬虫，这里跳过重复注册
+                    rss_key = f"rss_{feed_name}"
+                    self.register_crawler(rss_key, RSSCrawler(feed_name, feed_url))
+            except ImportError:
+                pass
     
     def register_crawler(self, name: str, crawler: BaseCrawler):
         """

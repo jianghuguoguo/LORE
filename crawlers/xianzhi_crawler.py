@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-先知安全技术社区爬虫模块
-通过RSS Feed获取文章
-数据源: https://xz.aliyun.com/feed
-"""
+
 
 import feedparser
 import time

@@ -1,672 +1,333 @@
-# Evo-PentestRAG - 系统架构
+# RefPenTest · 系统架构
 
-## 📐 总体架构
+> 文档版本：v0.5.0 · 更新日期：2026-03-01
 
-Evo-PentestRAG 采用分层架构设计，由四个主要层次组成：
+---
+
+## 1. 整体架构
+
+RefPenTest 采用纵向分层 + 横向模块化设计，五层流水线负责知识蒸馏，横向功能模块（爬虫、Dashboard、外部 KB 同步）为流水线提供数据输入与可视化管理。
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      应用层 (Application Layer)              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ Web Dashboard│  │ CLI Interface│  │ API Service  │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────────┐
-│                      业务层 (Business Layer)                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ 爬虫管理器   │  │ RAG引擎      │  │ 训练调度器   │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ 数据处理器   │  │ 反思诊断器   │  │ 经验提取器   │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────────┐
-│                      数据层 (Data Layer)                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ 原始数据     │  │ RAGFlow向量库│  │ 训练数据集   │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ 攻击日志     │  │ 模型权重     │  │ 配置文件     │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────────┐
-│                      基础设施层 (Infrastructure Layer)       │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ 文件系统     │  │ HTTP Client  │  │ LLM API      │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                       用户接口层                                      │
+│  Web Dashboard (dashboard/app.py · Flask · localhost:5000)           │
+│  CLI (run_full_pipeline.py · refpentest.py · crawlers/main_crawler.py) │
+└──────────────────────────────────────────────────────────────────────┘
+                                │
+┌──────────────────────────────────────────────────────────────────────┐
+│                    五层蒸馏流水线                                      │
+│                                                                      │
+│  Layer 0 ──► Layer 1 ──► Layer 2 ──► Layer 3 (Phase 1–5) ──► Layer 4 │
+│  日志标准化   LLM标注    经验蒸馏    XPEC跨会话融合         缺口感知爬取 │
+└──────────────────────────────────────────────────────────────────────┘
+                                │
+┌──────────────────────────────────────────────────────────────────────┐
+│                    数据 · 知识层                                       │
+│  data/layer{0-4}_output/  ·  RAGFlow 向量库 (8.140.33.83)             │
+│  queues/gap_queue.jsonl   ·  raw_data/ (爬虫 + 外部 KB)               │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🗂️ 目录结构详解
+## 2. 目录结构
 
 ```
-语料/
-├── 📁 crawlers/              # 爬虫模块
-│   ├── __init__.py
-│   ├── base_crawler.py       # 爬虫基类
-│   ├── crawler_manager.py    # 爬虫管理器
-│   ├── config.py             # 爬虫配置
-│   ├── csdn_crawler.py       # CSDN爬虫
-│   ├── github_crawler.py     # GitHub爬虫
-│   ├── attack_crawler.py     # ATT&CK爬虫
-│   ├── qianxin_crawler.py    # 奇安信爬虫
-│   ├── xianzhi_crawler.py    # 先知爬虫
-│   ├── example_crawler.py    # 示例爬虫
-│   └── attack_core/          # ATT&CK核心处理
-│       ├── config.py
-│       ├── run_all.py
-│       └── stix/             # STIX数据处理
+RefPenTest/
+├── src/                           # 核心业务逻辑
+│   ├── layer0/                    # 格式适配 + 日志标准化
+│   │   ├── log_adapter.py         #   AdapterRegistry · LogAdapter 抽象基类
+│   │   ├── canonical_types.py     #   CanonicalAgentTurn / SessionMeta
+│   │   ├── adapters/              #   内置适配器（CAI / LangChain / OpenAI / Generic）
+│   │   ├── parser.py              #   Turn 重建（CAI 三段式）
+│   │   ├── extractor.py           #   AtomicEvent 提取
+│   │   └── assembler.py           #   TurnSequence 组装
+│   ├── layer1/                    # LLM 会话标注
+│   ├── layer2/                    # 五类经验蒸馏
+│   │   ├── pipeline.py            #   主流程编排
+│   │   ├── experience_models.py   #   5 类经验数据模型
+│   │   └── extractors/            #   各类提取器
+│   ├── layer3/                    # XPEC 跨会话融合（Phase 1–5）
+│   ├── layer4/                    # 缺口感知爬取
+│   │   ├── models.py              #   GapSignal / GapPriority / CrawlResult
+│   │   ├── gap_queue.py           #   线程安全 JSONL 优先级队列
+│   │   ├── quality_filter.py      #   PoC 内容质量评分
+│   │   ├── crawler.py             #   CrawlWorker → CrawlerManager 适配
+│   │   ├── dispatcher.py          #   P0 立即 / P1 每日 / P2 每周调度
+│   │   └── scheduler.py           #   APScheduler 定时任务
+│   └── ragflow_uploader.py        # 经验批量上传 RAGFlow
 │
-├── 📁 processors/            # 数据处理与RAG模块
-│   ├── __init__.py
-│   ├── evo_config.py         # RAG配置
-│   ├── adaptive_retriever.py # 自适应检索器⭐
-│   ├── failure_detector.py   # 失败检测器
-│   ├── reflection_diagnoser.py # 反思诊断器
-│   ├── query_rewriter.py     # 查询改写器
-│   ├── auto_labeler_v2.py    # HER数据标注器⭐
-│   ├── trainer.py            # 模型训练器⭐
-│   ├── evaluator.py          # 模型评估器
-│   ├── dataset.py            # 数据集工具
-│   ├── ragflow_client.py     # RAGFlow客户端
-│   ├── llm_client.py         # LLM客户端
-│   ├── vector_store.py       # 向量存储
-│   ├── balance_dataset.py    # 数据平衡工具
-│   ├── train_balanced.py     # 平衡训练
-│   └── test_*.py             # 测试脚本
+├── crawlers/                      # 爬虫框架（含 CLI + 外部 KB 同步）
+│   ├── main_crawler.py            # ★ 多源爬虫主入口（CLI）
+│   ├── sync_data_light.py         # ★ 11 个外部安全数据库一键同步
+│   ├── crawler_manager.py         #   多源调度器
+│   ├── base_crawler.py            #   爬虫抽象基类
+│   ├── config.py                  #   Cookie / Token / 延迟配置
+│   ├── csdn_crawler.py            #   CSDN 爬虫
+│   ├── github_crawler.py          #   GitHub 爬虫
+│   ├── attack_crawler.py          #   MITRE ATT&CK 爬虫
+│   ├── qianxin_crawler.py         #   奇安信爬虫
+│   ├── xianzhi_crawler.py         #   先知爬虫
+│   ├── rss_crawler.py             #   RSS 聚合爬虫
+│   ├── rss_scheduler.py           #   RSS 定时调度（每 2h）
+│   ├── wechat_crawler/            #   微信公众号（mitmproxy 代理）
+│   ├── attack_core/               #   ATT&CK STIX 核心处理
+│   └── example_crawler.py         #   新爬虫开发模板
 │
-├── 📁 dashboard/             # Web可视化界面
-│   ├── app.py                # Flask应用⭐
-│   ├── templates/            # HTML模板
-│   │   └── index.html
-│   ├── static/               # 静态资源
-│   │   ├── css/
-│   │   └── js/
-│   └── *.md                  # Dashboard文档
+├── dashboard/                     # Web 可视化界面
+│   ├── app.py                     #   Flask 应用（port 5000）
+│   ├── templates/index.html       #   单页 SPA
+│   └── static/                    #   CSS / JS
 │
-├── 📁 raw_data/              # 原始数据存储
-│   ├── csdn/                 # CSDN数据
-│   ├── github/               # GitHub数据
-│   ├── attack/               # ATT&CK数据
-│   ├── QIANXIN/              # 奇安信数据
-│   ├── XIANZHI/              # 先知数据
-│   ├── cve-database/         # CVE数据库
-│   ├── nvd-database/         # NVD数据库
-│   └── ...                   # 其他数据源
+├── scripts/                       # 轻量运行脚本
+│   └── run_layer0.py              #   Layer 0 命令行入口（由 run_full_pipeline.py 调用）
 │
-├── 📁 logs/                  # 攻击日志（用于HER）
-│   └── cai_*.jsonl           # 攻击轨迹日志
+├── configs/
+│   └── config.yaml                # 全局配置（LLM / RAGFlow / Layer 4）
 │
-├── 📁 docs/                  # 文档目录
-│   ├── REFLECTION_EXPERIENCE.md # 反思经验⭐
-│   ├── 01_OVERVIEW.md        # 项目概述
-│   ├── 02_ARCHITECTURE.md    # 架构文档（本文件）
-│   ├── 03_USAGE_GUIDE.md     # 使用指南
-│   ├── 04_ADVANCED_FEATURES.md # 高级功能
-│   └── ...
+├── data/
+│   ├── layer0_output/             # 标准化后的会话 JSONL
+│   ├── layer1_output/             # LLM 标注结果（15 sessions / 415 events）
+│   ├── layer2_output/             # 五类结构化经验（172 条）
+│   │   └── {session_id}/experiences.jsonl
+│   ├── layer3_output/
+│   │   ├── phase5_klm_registry.jsonl   # KLM 注册表（137 条）
+│   │   ├── conflict_report.jsonl       # 冲突报告
+│   │   └── phase5_reflux_ready.jsonl   # 已 reflux（6 条）
+│   └── layer4_output/
+│       └── gap_dispatch_summary.json
 │
-├── 📄 main_crawler.py        # 爬虫主入口⭐
-├── 📄 sync_data_light.py     # 静态数据同步⭐
-├── 📄 requirements.txt       # Python依赖
-├── 📄 README.md              # 主文档（合并版）
-└── 📄 优化方案.md            # 原始优化方案
-
-⭐ = 核心文件
+├── queues/
+│   └── gap_queue.jsonl            # Layer 4 缺口信号优先级队列
+│
+├── raw_data/                      # 所有原始语料
+│   ├── csdn/ github/ QIANXIN/ XIANZHI/ wechat/
+│   ├── layer4/                    # Layer 4 定向爬取输出
+│   └── *-database/                # 11 个外部知识库
+│
+├── logs/                          # 原始渗透测试会话日志（.jsonl）
+│
+├── run_full_pipeline.py           # 全流程 CLI（Layer 0 → Upload）
+├── refpentest.py                  # 交互式主入口
+├── run_layer1_llm_batch.py        # Layer 1 批处理入口
+├── run_layer2_analysis.py         # Layer 2 入口
+├── run_layer3_phase12.py          # Layer 3 Phase 1+2
+├── run_layer3_phase34.py          # Layer 3 Phase 3+4
+├── run_layer3_phase5.py           # Layer 3 Phase 5
+├── run_layer4_gap_dispatch.py     # Layer 4 入口
+├── main_crawler.py                # 向后兼容 shim → crawlers/main_crawler.py
+├── crawl_wechat.py                # 向后兼容 shim → crawlers/wechat_crawler/
+├── scheduler.py                   # 定时任务统一入口
+├── pyproject.toml
+└── requirements.txt
 ```
+
+> **向后兼容说明**：根目录的 `main_crawler.py` 和 `crawl_wechat.py` 保留为 shim，
+> 执行时自动转发至 `crawlers/` 下的实际代码，旧路径调用不受影响。
 
 ---
 
-## 🧩 核心模块详解
+## 3. 五层流水线详解
 
-### 1. 爬虫模块 (Crawlers)
+### Layer 0：日志标准化
 
-#### 设计模式
-- **基类模式**: 所有爬虫继承 `BaseCrawler`
-- **管理器模式**: `CrawlerManager` 统一调度
-- **插件化**: 易于扩展新数据源
+**输入**：`logs/*.jsonl`（支持 CAI / LangChain / OpenAI Assistants / 任意 JSONL）  
+**输出**：`data/layer0_output/layer0_{session_id}.jsonl`
 
-#### 类图
+`AdapterRegistry.auto_detect()` 自动嗅探日志格式，输出统一的 `CanonicalAgentTurn` 序列。
+
+**入口**：`scripts/run_layer0.py`（由 `run_full_pipeline.py` 自动调用）
+
+---
+
+### Layer 1：LLM 会话标注
+
+**输入**：`data/layer0_output/`  
+**输出**：`data/layer1_output/layer1_{session_id}.jsonl`
+
+使用 DeepSeek Chat API 批量标注，每条工具调用产出：
+
+| 字段 | 说明 |
+|:-----|:----|
+| `outcome_label` | `success / failure` |
+| `failure_root_cause` | `{dimension, sub_dimension, evidence}` |
+| `attack_phase` | ATT&CK 技战术阶段 |
+| `cve_ids` | 关联 CVE |
+| `rag_adoption` | 是否使用了 RAG 检索结果 |
+
+**当前数据量**：15 sessions · 415 事件 · 171 次失败  
+**入口**：`run_layer1_llm_batch.py`
+
+---
+
+### Layer 2：经验蒸馏
+
+**输入**：`data/layer1_output/`  
+**输出**：`data/layer2_output/{session_id}/experiences.jsonl`
+
+| 类型 | 说明 |
+|:-----|:----|
+| `FACTUAL` | CVE / CVSS / 受影响版本 / 利用前置条件 |
+| `PROCEDURAL_POS` | 成功命令序列 + 成功指标 |
+| `PROCEDURAL_NEG` | 失败命令 + 错误信息 + 根因 + 约束 |
+| `METACOGNITIVE` | 关键教训 + 适用场景 + 决策规则 |
+| `CONCEPTUAL` | 技术原理 + 工具用法 |
+
+**当前产出**：172 条经验  
+**入口**：`run_layer2_analysis.py`（固定 `--no-ragflow`，蒸馏阶段不上传）
+
+---
+
+### Layer 3：XPEC 跨会话融合
+
+| Phase | 脚本 | 功能 | 输出 |
+|:------|:----|:----|:----|
+| 1+2 | `run_layer3_phase12.py` | SEC 等价集聚类 + EWC 证据权重 | `phase12_result.jsonl` |
+| 3+4 | `run_layer3_phase34.py` | RME 融合引擎 + BCC 贝叶斯校准 | `phase34_consolidated.jsonl` |
+| 5   | `run_layer3_phase5.py`  | KLM 生命周期注册 | `phase5_klm_registry.jsonl` |
+
+**当前产出**：137 条 KLM · 6 条 reflux-ready · 55 条冲突已标记
+
+---
+
+### Layer 4：缺口感知爬取
 
 ```
-┌─────────────────┐
-│  BaseCrawler    │ (抽象基类)
-├─────────────────┤
-│+ crawl()        │
-│+ save()         │
-│+ validate()     │
-└─────────────────┘
-        △
-        │ 继承
+Layer 1 失败事件 (171 条)
         │
-    ┌───┴────────────────┬──────────────┬───────────┐
-    │                    │              │           │
-┌───▼────┐     ┌────────▼──┐  ┌────────▼──┐  ┌────▼────┐
-│ CSDN   │     │ GitHub    │  │ ATT&CK    │  │ 先知    │
-│Crawler │     │ Crawler   │  │ Crawler   │  │ Crawler │
-└────────┘     └───────────┘  └───────────┘  └─────────┘
+        ▼
+src/layer4/gap_queue.py
+  → GapSignal{dimension, sub_dim, target_service, search_queries}
+        │
+        ├─ P0 → dispatcher.handle_p0()  立即触发
+        ├─ P1 → APScheduler 每日 02:00
+        └─ 手动 → Dashboard /api/gap/crawl
+        │
+        ▼
+CrawlWorker → CrawlerManager → csdn/github/qianxin/xianzhi
+  → raw_data/layer4/
 ```
 
-#### 工作流程
+**入口**：`run_layer4_gap_dispatch.py`
+
+---
+
+## 4. 爬虫框架
+
+所有爬虫相关代码（含 CLI 主入口和外部 KB 同步工具）统一位于 `crawlers/`：
 
 ```
-1. 初始化 → 2. 配置检查 → 3. 发起请求 → 4. 解析内容 → 5. 数据清洗 → 6. 保存到文件
+crawlers/
+├── main_crawler.py      # ★ 多源爬虫 CLI（交互式 + 命令行）
+├── sync_data_light.py   # ★ 11 个外部安全数据库同步
+├── crawler_manager.py   # 统一调度器
+├── base_crawler.py      # BaseCrawler（所有爬虫基类）
+└── [各数据源爬虫].py
 ```
 
-#### 关键代码
+### 4.1 类继承关系
+
+```
+BaseCrawler (抽象基类)
+    │
+    ├── CSDNVIPCrawler
+    ├── GitHubCrawler
+    ├── MITREAttackCrawler
+    ├── QianXinCrawler
+    ├── XianZhiCrawler
+    └── [自定义爬虫]
+```
+
+### 4.2 扩展新爬虫
 
 ```python
-# crawlers/base_crawler.py
-class BaseCrawler:
-    def crawl(self, query: str, max_pages: int = 10, **kwargs):
-        """爬取方法 - 子类必须实现"""
-        raise NotImplementedError
-    
-    def save(self, data: List[Dict], filename: str):
-        """统一的保存逻辑"""
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+# 1. 继承 BaseCrawler（参考 crawlers/example_crawler.py）
+from crawlers.base_crawler import BaseCrawler
+
+class MyNewCrawler(BaseCrawler):
+    def crawl(self, query: str, max_pages: int = 5, **kwargs):
+        # 实现爬取逻辑，返回字典列表
+        return [{"title": ..., "content": ..., "link": ...}]
+
+# 2. 注册到 CrawlerManager（crawlers/crawler_manager.py）
+_CRAWLERS["mynew"] = lambda: MyNewCrawler()
 ```
 
 ---
 
-### 2. RAG模块 (Processors)
-
-#### 核心组件
-
-##### 2.1 自适应检索器 (AdaptiveRetriever)
-
-**职责**: 集成所有RAG组件的中枢系统
-
-```python
-# processors/adaptive_retriever.py
-class AdaptiveRetriever:
-    def __init__(self):
-        self.failure_detector = FailureDetector()
-        self.diagnoser = ReflectionDiagnoser()
-        self.rewriter = QueryRewriter()
-        self.ragflow_client = RAGFlowClient()
-    
-    def retrieve(self, query: str, context: Dict) -> List[Dict]:
-        """
-        自适应检索主流程：
-        1. 初次检索
-        2. 失败检测
-        3. 反思诊断
-        4. 查询改写
-        5. 重新检索
-        6. 经验总结
-        """
-        pass
-```
-
-**工作流程图**:
+## 5. RAGFlow 上传链路
 
 ```
-┌─────────┐
-│ 初次检索 │
-└────┬────┘
-     │
-     ▼
-┌─────────┐     成功      ┌─────────┐
-│失败检测  ├──────Yes─────→│ 返回结果 │
-└────┬────┘               └─────────┘
-     │ No
-     ▼
-┌─────────┐
-│反思诊断  │ (识别问题类型)
-└────┬────┘
-     │
-     ▼
-┌─────────┐
-│查询改写  │ (生成3个变体)
-└────┬────┘
-     │
-     ▼
-┌─────────┐
-│重新检索  │ (最多3轮)
-└────┬────┘
-     │
-     ▼
-┌─────────┐
-│经验总结  │ (推送到经验库)
-└─────────┘
+Layer 2 (仅蒸馏，不上传)
+    │
+Layer 3 (融合)
+    │
+Layer 4 (缺口检测)
+    │
+Upload: src/ragflow_uploader.py
+    │
+RAGFlow 经验库 (http://8.140.33.83)
 ```
 
-##### 2.2 失败检测器 (FailureDetector)
+**上传规则**：
+- `RAG_EVALUATION` 层排除（无检索价值）
+- `run_full_pipeline.py` 末尾统一执行 `upload` 阶段
+- `--no-ragflow` 跳过末尾上传（离线调试用，不影响蒸馏）
 
-**职责**: 判断检索结果是否满足需求
+手动重新上传：
 
-```python
-# processors/failure_detector.py
-class FailureDetector:
-    def detect(self, query: str, documents: List[Dict]) -> Dict:
-        """
-        检测维度:
-        - 文档数量是否充足
-        - 相似度分数是否达标
-        - 内容完整性是否足够
-        - 版本匹配度
-        """
-        return {
-            'is_failed': bool,
-            'reason': str,
-            'confidence': float
-        }
-```
+```bash
+# 全量上传
+python src/ragflow_uploader.py
 
-##### 2.3 反思诊断器 (ReflectionDiagnoser)
-
-**职责**: 分析失败原因并给出诊断
-
-```python
-# processors/reflection_diagnoser.py
-class ReflectionDiagnoser:
-    def diagnose(self, query: str, documents: List[Dict]) -> Dict:
-        """
-        诊断类型:
-        - query_drift: Query漂移
-        - granularity_mismatch: 粒度不匹配
-        - version_conflict: 版本冲突
-        - domain_shift: 领域偏移
-        """
-        return {
-            'diagnosis_type': str,
-            'description': str,
-            'suggestions': List[str]
-        }
-```
-
-##### 2.4 查询改写器 (QueryRewriter)
-
-**职责**: 基于诊断结果生成新查询
-
-```python
-# processors/query_rewriter.py
-class QueryRewriter:
-    def rewrite(self, original_query: str, diagnosis: Dict) -> List[str]:
-        """
-        改写策略:
-        - 扩展: 添加相关术语
-        - 聚焦: 缩小范围
-        - 替换: 使用同义词
-        - 结构化: 改变查询结构
-        """
-        return [query1, query2, query3]
+# 重传指定 session
+python src/ragflow_uploader.py --session <session_id>
 ```
 
 ---
 
-### 3. 学习模块 (Training)
-
-#### 3.1 HER数据标注器 (AutoLabelerV2)
-
-**职责**: 从攻击日志中自动提取训练数据
-
-```python
-# processors/auto_labeler_v2.py
-class AutoLabelerV2:
-    def extract_her_samples(self, log_file: str) -> List[Dict]:
-        """
-        提取逻辑:
-        1. 按Trace ID分组日志
-        2. 识别检索事件
-        3. 追踪后续执行结果
-        4. 根据成功/失败打标签
-        """
-        return [
-            {
-                'query': str,
-                'document': str,
-                'label': float,  # 1.0 = 有用, 0.0 = 无用
-                'context': Dict
-            }
-        ]
-```
-
-**后见之明标注原理**:
+## 6. 数据流全局视图
 
 ```
-时间线: t0 ────────→ t1 ────────→ t2 ────────→ t3
-       检索文档A    执行命令    命令成功      拿到Shell
-         │                        │             │
-         └────────────────────────┴─────────────┘
-                  回溯: 文档A是有用的! → Label = 1.0
-```
-
-#### 3.2 模型训练器 (Trainer)
-
-**职责**: 训练Cross-Encoder重排序模型
-
-```python
-# processors/trainer.py
-class Trainer:
-    def train(self, dataset_path: str, epochs: int = 3):
-        """
-        训练流程:
-        1. 加载数据集
-        2. 划分训练/测试集
-        3. 初始化Cross-Encoder
-        4. Fine-tuning
-        5. 评估与保存
-        """
-        pass
-```
-
-**模型架构**:
-
-```
-输入: [Query + Context, Document]
-  │
-  ▼
-┌─────────────────────┐
-│ Cross-Encoder       │
-│ (MiniLM-L-6-v2)     │
-├─────────────────────┤
-│ 12层Transformer     │
-│ 384维隐藏层         │
-└─────────────────────┘
-  │
-  ▼
-输出: Relevance Score (0-1)
-```
-
-#### 3.3 模型评估器 (Evaluator)
-
-**职责**: 评估模型性能
-
-```python
-# processors/evaluator.py
-class Evaluator:
-    def evaluate(self, model, test_set) -> Dict:
-        """
-        评估指标:
-        - MRR (Mean Reciprocal Rank)
-        - MAP (Mean Average Precision)
-        - NDCG@K
-        - Precision@K
-        """
-        return {
-            'mrr': float,
-            'map': float,
-            'ndcg@3': float,
-            'ndcg@5': float,
-            'precision@3': float
-        }
+logs/*.jsonl
+    │
+    ▼ Layer 0
+data/layer0_output/
+    │
+    ▼ Layer 1 (DeepSeek API)
+data/layer1_output/
+    │                    │
+    ▼ Layer 2            ▼ Layer 4 GapQueue
+data/layer2_output/   queues/gap_queue.jsonl
+    │                         │
+    ▼ Layer 3 XPEC            ▼ CrawlWorker
+data/layer3_output/        raw_data/layer4/
+    │
+    ▼ Upload
+RAGFlow 经验库（153 条已上传）
 ```
 
 ---
 
-### 4. Web界面 (Dashboard)
+## 7. 配置系统
 
-#### 技术栈
-- **后端**: Flask 2.0+
-- **前端**: Bootstrap 5 + jQuery 3
-- **图表**: Chart.js
-- **实时通信**: Server-Sent Events (SSE)
-
-#### 功能模块
-
-```
-┌─────────────────────────────────────────┐
-│         Dashboard 功能模块              │
-├─────────────────────────────────────────┤
-│ 1. 爬虫控制面板                         │
-│    - 数据源选择                         │
-│    - 参数配置                           │
-│    - 启动/停止                          │
-├─────────────────────────────────────────┤
-│ 2. 进度监控                             │
-│    - 实时进度条                         │
-│    - 统计数据                           │
-│    - 彩色日志                           │
-├─────────────────────────────────────────┤
-│ 3. RAG测试                              │
-│    - 自适应检索                         │
-│    - 经验推送                           │
-│    - 轨迹可视化                         │
-├─────────────────────────────────────────┤
-│ 4. 模型训练                             │
-│    - HER数据提取                        │
-│    - 模型训练触发                       │
-│    - 训练进度监控                       │
-├─────────────────────────────────────────┤
-│ 5. 数据管理                             │
-│    - 文件浏览器                         │
-│    - 结果预览                           │
-│    - 数据导出                           │
-└─────────────────────────────────────────┘
-```
-
-#### API路由
-
-```python
-# dashboard/app.py
-@app.route('/api/crawlers', methods=['GET'])
-def get_crawlers():
-    """获取所有爬虫信息"""
-    pass
-
-@app.route('/api/start', methods=['POST'])
-def start_crawling():
-    """启动爬取任务"""
-    pass
-
-@app.route('/api/adaptive_retrieve', methods=['POST'])
-def adaptive_retrieve():
-    """自适应检索API"""
-    pass
-
-@app.route('/api/train_model', methods=['POST'])
-def train_model():
-    """触发模型训练"""
-    pass
-```
+| 文件 | 用途 |
+|:----|:----|
+| `configs/config.yaml` | LLM API Key · RAGFlow 连接 · Layer 4 调度参数 |
+| `crawlers/config.py` | 爬虫 Cookie / Token / 请求延迟 / 代理 |
 
 ---
 
-## 🔄 数据流
+## 8. 测试
 
-### 完整数据流图
+```bash
+cd RefPenTest
+python -m pytest tests/ -v   # 276 个用例
+```
 
-```
-┌──────────┐
-│ 数据源   │ (CSDN, GitHub, CVE...)
-└────┬─────┘
-     │
-     ▼
-┌──────────┐
-│ 爬虫模块  │ (crawlers/)
-└────┬─────┘
-     │
-     ▼
-┌──────────┐
-│ raw_data/ │ (JSON文件)
-└────┬─────┘
-     │
-     ▼
-┌──────────────┐
-│ RAGFlow推送  │ (processors/ragflow_client.py)
-└────┬─────────┘
-     │
-     ▼
-┌──────────────┐
-│ RAGFlow向量库│
-└────┬─────────┘
-     │
-     ▼
-┌──────────────┐
-│ Agent检索    │ (processors/adaptive_retriever.py)
-└────┬─────────┘
-     │
-     ▼
-┌──────────────┐
-│ 攻击执行     │
-└────┬─────────┘
-     │
-     ▼
-┌──────────────┐
-│ logs/        │ (攻击日志)
-└────┬─────────┘
-     │
-     ▼
-┌──────────────┐
-│ HER标注      │ (processors/auto_labeler_v2.py)
-└────┬─────────┘
-     │
-     ▼
-┌──────────────┐
-│ 训练数据集   │ (dataset.jsonl)
-└────┬─────────┘
-     │
-     ▼
-┌──────────────┐
-│ 模型训练     │ (processors/trainer.py)
-└────┬─────────┘
-     │
-     ▼
-┌──────────────┐
-│ Reranker模型 │
-└────┬─────────┘
-     │
-     └──回到检索环节,形成闭环
-```
+测试类型：单元测试（各层 src 模块）· 集成测试（端到端流程）· 爬虫测试（可选网络）
 
 ---
 
-## 🔐 配置系统
-
-### 配置文件层级
-
-```
-1. crawlers/config.py        # 爬虫配置
-2. processors/evo_config.py  # RAG配置
-3. dashboard/app.py          # Web配置
-```
-
-### 核心配置项
-
-```python
-# processors/evo_config.py
-class EvoConfig:
-    # RAGFlow配置
-    RAGFLOW_BASE_URL = "http://127.0.0.1:9380"
-    RAGFLOW_API_KEY = "your_api_key"
-    RAGFLOW_DATASET_ID = "语料库ID"
-    RAGFLOW_EXPR_ID = "经验库ID"
-    
-    # LLM配置
-    LLM_API_BASE = "https://api.deepseek.com/v1"
-    LLM_API_KEY = "your_llm_key"
-    LLM_MODEL = "deepseek-chat"
-    
-    # 检索配置
-    TOP_K = 50           # 初次检索数量
-    RERANK_TOP_K = 3     # 重排序后返回数量
-    MAX_RETRY = 3        # 最大重试次数
-    
-    # 训练配置
-    BATCH_SIZE = 16
-    LEARNING_RATE = 2e-5
-    EPOCHS = 3
-```
-
----
-
-## 🧪 测试框架
-
-### 测试结构
-
-```
-processors/
-├── test_framework.py           # 测试框架基类
-├── test_step3_complete.py      # Step3完整测试
-├── test_llm_integration.py     # LLM集成测试
-└── step3_usage_example.py      # 使用示例
-```
-
-### 测试覆盖
-
-- ✅ 单元测试: 各模块独立测试
-- ✅ 集成测试: 端到端流程测试
-- ✅ 性能测试: 检索速度和准确率
-- 🚧 回归测试: 持续集成
-
----
-
-## 📊 性能优化
-
-### 优化策略
-
-1. **缓存机制**
-   - LLM响应缓存
-   - 向量检索结果缓存
-   - 爬虫结果缓存
-
-2. **并行处理**
-   - 多线程爬虫
-   - 批量RAGFlow推送
-   - 异步LLM调用
-
-3. **数据压缩**
-   - JSON压缩存储
-   - 向量量化
-
-4. **懒加载**
-   - 按需加载模型
-   - 分页加载数据
-
----
-
-## 🔒 安全考虑
-
-### 安全措施
-
-1. **API密钥管理**
-   - 环境变量存储
-   - 配置文件加密
-
-2. **输入验证**
-   - SQL注入防护
-   - XSS防护
-   - CSRF Token
-
-3. **访问控制**
-   - Rate Limiting
-   - IP白名单
-   - 认证授权
-
-4. **日志审计**
-   - 敏感信息脱敏
-   - 操作日志记录
-
----
-
-## 📈 扩展性设计
-
-### 扩展点
-
-1. **新数据源扩展**
-   - 继承 `BaseCrawler`
-   - 注册到 `CrawlerManager`
-
-2. **新诊断类型**
-   - 扩展 `ReflectionDiagnoser`
-   - 添加自定义诊断逻辑
-
-3. **新评估指标**
-   - 扩展 `Evaluator`
-   - 实现自定义指标计算
-
-4. **新LLM后端**
-   - 实现 `LLMClient` 接口
-   - 适配不同API格式
-
----
-
-**文档版本**: v1.0  
-**最后更新**: 2026年2月11日
+**文档版本**：v0.5.0 · **最后更新**：2026-03-01
