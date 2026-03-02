@@ -159,12 +159,15 @@ RefPenTest/
 │
 ├── logs/                             # 原始渗透测试会话日志 (.jsonl)
 ├── configs/config.yaml               # 全局配置（含 layer4 参数）
-├── run_layer1_llm_batch.py           # Layer 1 批处理入口
-├── run_layer2_analysis.py            # Layer 2 入口脚本
-├── run_layer3_phase12.py             # Layer 3 Phase 1+2
-├── run_layer3_phase34.py             # Layer 3 Phase 3+4
-├── run_layer3_phase5.py              # Layer 3 Phase 5（KLM 注册）
-├── run_discovery.py                  # 发现扫描入口
+├── run/                              # 各阶段独立运行脚本（分阶段调试用）
+│   ├── README.md                     #   各脚本用法说明
+│   ├── run_layer1_llm_batch.py       #   Layer 1 批处理入口
+│   ├── run_layer2_analysis.py        #   Layer 2 入口脚本
+│   ├── run_layer3_phase12.py         #   Layer 3 Phase 1+2
+│   ├── run_layer3_phase34.py         #   Layer 3 Phase 3+4
+│   ├── run_layer3_phase5.py          #   Layer 3 Phase 5（KLM 注册）
+│   ├── run_layer4_gap_dispatch.py    #   Layer 4 入口
+│   └── run_discovery.py              #   微信公众号发现入口
 ├── crawl_wechat.py                   # 微信公众号爬取 CLI（shim）
 ├── main_crawler.py                   # 多源爬虫 CLI（shim 转发 crawlers/main_crawler.py）
 ├── scheduler.py                      # 定时任务统一入口
@@ -235,7 +238,7 @@ meta, turns = adapter.parse(Path("logs/my_run.jsonl"))
 
 ```bash
 cd RefPenTest
-python run_layer1_llm_batch.py
+python run/run_layer1_llm_batch.py
 # 输出至 data/layer1_output/layer1_<session_id>.jsonl
 ```
 
@@ -249,7 +252,7 @@ python run_layer1_llm_batch.py
 从 Layer 1 标注文件提炼五类结构化经验：
 
 ```bash
-python run_layer2_analysis.py
+python run/run_layer2_analysis.py
 # 输出至 data/layer2_output/
 ```
 
@@ -261,9 +264,9 @@ python run_layer2_analysis.py
 
 ```bash
 # 分阶段运行（推荐）
-python run_layer3_phase12.py   # Phase 1+2：SEC 等价集聚类 + 规则提炼
-python run_layer3_phase34.py   # Phase 3+4：RME 融合 + 冲突解决
-python run_layer3_phase5.py    # Phase 5：KLM 注册
+python run/run_layer3_phase12.py   # Phase 1+2：SEC 等价集聚类 + 规则提炼
+python run/run_layer3_phase34.py   # Phase 3+4：RME 融合 + 冲突解决
+python run/run_layer3_phase5.py    # Phase 5：KLM 注册
 # 输出至 data/layer3_output/
 #   phase5_klm_registry.jsonl  ← 136 条 KLM 条目（6 条已 reflux 至 RAGFlow）
 #   phase34_consolidated.jsonl

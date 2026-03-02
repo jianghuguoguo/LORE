@@ -94,37 +94,37 @@ _STAGES: List[Tuple[str, str, str, str]] = [
     (
         "layer1",
         "Layer 1  LLM 会话标注",
-        "python run_layer1_llm_batch.py",
+        "python run/run_layer1_llm_batch.py",
         "data/layer1_output",
     ),
     (
         "layer2",
         "Layer 2  经验蒸馏",
-        "python run_layer2_analysis.py --no-ragflow",
+        "python run/run_layer2_analysis.py --no-ragflow",
         "data/layer2_output",
     ),
     (
         "layer3_p12",
         "Layer 3  Phase 1+2  SEC / EWC",
-        "python run_layer3_phase12.py",
+        "python run/run_layer3_phase12.py",
         "data/layer3_output/phase12_result.jsonl",
     ),
     (
         "layer3_p34",
         "Layer 3  Phase 3+4  RME / BCC",
-        "python run_layer3_phase34.py",
+        "python run/run_layer3_phase34.py",
         "data/layer3_output/phase34_consolidated.jsonl",
     ),
     (
         "layer3_p5",
         "Layer 3  Phase 5    KLM",
-        "python run_layer3_phase5.py",
+        "python run/run_layer3_phase5.py",
         "data/layer3_output/phase5_klm_registry.jsonl",
     ),
     (
         "layer4",
         "Layer 4  缺口感知 + 冲突检测",
-        "python run_layer4_gap_dispatch.py --no-crawl",
+        "python run/run_layer4_gap_dispatch.py --no-crawl",
         "data/layer4_output/gap_dispatch_summary.json",
     ),
     (
