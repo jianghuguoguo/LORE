@@ -564,8 +564,8 @@ def transform_experience(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     elif layer == "CONCEPTUAL":
         return _transform_conceptual(raw)
 
-    elif layer in ("PROCEDURAL_POS", "RAG_EVALUATION"):
-        # PROCEDURAL_POS 暂无上传规范；RAG_EVALUATION 不入主检索库
+    elif layer == "PROCEDURAL_POS":
+        # PROCEDURAL_POS 暂无上传规范
         return None
 
     return None

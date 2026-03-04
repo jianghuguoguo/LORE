@@ -364,8 +364,6 @@ class AnnotatedEvent:
     needs_llm: bool = False
     # ── Phase 3 LLM 填充字段 ───────────────────────────────────────────
     attack_phase_reasoning: Optional[str] = None   # attack_phase 判定依据
-    rag_adoption: Optional[Dict[str, Any]] = None  # 仅 has_rag_context=True 的 RAG 事件填充；字段：adoption_level/adoption_label/adoption_weight/reasoning
-    rag_adoption_reasoning: Optional[str] = None   # RAG 采纳判定依据
     llm_error: Optional[str] = None                # LLM 调用失败时的错误信息
 
     # ── 只读代理属性（便于 Layer 1 直接访问 base 字段）───────────────────
@@ -413,9 +411,7 @@ class AnnotatedTurnSequence:
     llm_pending: int = 0
     llm_pending_failure_cause: int = 0
     # ── Phase 3 字段 ────────────────────────────────────────────────────────────
-    rag_adoption_results: List["RagAdoptionResult"] = field(default_factory=list)
     session_outcome: Optional["SessionOutcome"] = None
-    bar_score: float = 0.0        # 行为采纳度（Behaviour Adoption Rate）平均分
     llm_processed: bool = False   # Phase 3 是否已执行
     llm_call_count: int = 0       # Phase 3 实际 LLM 调用次数
     llm_error_count: int = 0      # Phase 3 LLM 调用失败次数
@@ -457,46 +453,6 @@ class AttackPhase(str, Enum):
     ENV_PREPARATION     = "ENV_PREPARATION"        # 环境准备（扩展维度）
 
 
-class RagAdoptionLevel(int, Enum):
-    """RAG 内容行为采纳度级别（技术方案 Layer 1 ④）。
-
-    Level 3: 直接引用（Direct Adoption）      权重 1.0
-    Level 2: 参考改写（Informed Adaptation）   权重 0.6
-    Level 1: 思路启发（Conceptual Influence）  权重 0.3
-    Level 0: 未采纳（Ignored）                权重 0.0
-    """
-    DIRECT      = 3   # 直接引用：后续行为的命令/代码中含 RAG 内容中的具体字符串
-    INFORMED    = 2   # 参考改写：技术路线与 RAG 一致，但由 Agent 自行生成
-    CONCEPTUAL  = 1   # 思路启发：影响了攻击方向选择，但具体路线不同
-    IGNORED     = 0   # 未采纳：后续行为与 RAG 内容无任何关联
-
-
-_RAG_ADOPTION_WEIGHTS: dict[int, float] = {3: 1.0, 2: 0.6, 1: 0.3, 0: 0.0}
-
-
-@dataclass
-class RagAdoptionResult:
-    """单次 RAG 查询的行为采纳度评估结果（Phase 3 LLM 判定）。
-
-    Fields:
-        rag_tool_call_id  : 对应的 RAG 查询 tool_call_id
-        query             : RAG 查询内容
-        rag_turn_index    : RAG 查询所在 Turn 序号
-        adoption_level    : 0-3（见 RagAdoptionLevel）
-        adoption_label    : 人类可读标签
-        adoption_weight   : 对应权重（用于 BAR 计算）
-        reasoning         : LLM 判定依据
-        behavior_window   : 分析的行为窗口事件 ID 列表
-    """
-    rag_tool_call_id: str
-    query: str
-    rag_turn_index: int
-    adoption_level: int = 0
-    adoption_label: str = "ignored"
-    adoption_weight: float = 0.0
-    reasoning: str = ""
-    behavior_window: List[str] = field(default_factory=list)   # event_id 列表
-
 
 @dataclass
 class SessionOutcome:
@@ -508,7 +464,6 @@ class SessionOutcome:
         session_goal_achieved : 渗透测试目标是否完成（核心指标）
         achieved_goals        : 已达成的具体目标列表
         failed_goals          : 未达成的目标列表
-        bar_score             : 行为采纳度平均分（0.0-1.0）
         reasoning             : LLM 判定依据
     """
     is_success: bool = False
@@ -516,6 +471,5 @@ class SessionOutcome:
     session_goal_achieved: bool = False
     achieved_goals: List[str] = field(default_factory=list)
     failed_goals: List[str] = field(default_factory=list)
-    bar_score: float = 0.0
     reasoning: str = ""
     key_signals: List[str] = field(default_factory=list)  # 实际解析到的强募成功信号（uid=0/root@/flag{）

@@ -277,7 +277,6 @@ def load_annotated_turn_sequence(input_path: Path) -> AnnotatedTurnSequence:
         AnnotatedTurnSequence,
         FailureRootCause,
         FailureRootCauseDimension,
-        RagAdoptionResult,
         SessionOutcome,
         SessionMetadata,
     )
@@ -323,23 +322,7 @@ def load_annotated_turn_sequence(input_path: Path) -> AnnotatedTurnSequence:
             needs_llm=bool(ae_d.get("needs_llm", False)),
             # Phase 3 新字段
             attack_phase_reasoning=ae_d.get("attack_phase_reasoning"),
-            rag_adoption=ae_d.get("rag_adoption"),
-            rag_adoption_reasoning=ae_d.get("rag_adoption_reasoning"),
             llm_error=ae_d.get("llm_error"),
-        ))
-
-    # Phase 3：反序列化 rag_adoption_results
-    rar_list = []
-    for r in data.get("rag_adoption_results", []):
-        rar_list.append(RagAdoptionResult(
-            rag_tool_call_id=r.get("rag_tool_call_id", ""),
-            query=r.get("query", ""),
-            rag_turn_index=int(r.get("rag_turn_index", 0)),
-            adoption_level=int(r.get("adoption_level", 0)),
-            adoption_label=r.get("adoption_label", "ignored"),
-            adoption_weight=float(r.get("adoption_weight", 0.0)),
-            reasoning=r.get("reasoning", ""),
-            behavior_window=r.get("behavior_window", []),
         ))
 
     # Phase 3：反序列化 session_outcome
@@ -352,7 +335,6 @@ def load_annotated_turn_sequence(input_path: Path) -> AnnotatedTurnSequence:
             session_goal_achieved=bool(so_d.get("session_goal_achieved", False)),
             achieved_goals=so_d.get("achieved_goals", []),
             failed_goals=so_d.get("failed_goals", []),
-            bar_score=float(so_d.get("bar_score", 0.0)),
             reasoning=so_d.get("reasoning", ""),
             key_signals=so_d.get("key_signals", []),  # P2修复
         )
@@ -364,9 +346,7 @@ def load_annotated_turn_sequence(input_path: Path) -> AnnotatedTurnSequence:
         llm_pending=int(data.get("llm_pending", 0)),
         llm_pending_failure_cause=int(data.get("llm_pending_failure_cause", 0)),
         # Phase 3
-        rag_adoption_results=rar_list,
         session_outcome=session_outcome,
-        bar_score=float(data.get("bar_score", 0.0)),
         llm_processed=bool(data.get("llm_processed", False)),
         llm_call_count=int(data.get("llm_call_count", 0)),
         llm_error_count=int(data.get("llm_error_count", 0)),

@@ -19,7 +19,11 @@ Layer 1 – 确定性规则引擎（Deterministic Rules Engine）
 已实现规则（Phase 2）：
     RC-127  return_code=127 → ENV-BINARY_MISSING
     RC-126  return_code=126 → ENV-EXECUTE_PERMISSION_DENIED
-    TOUT    timed_out=True  → ENV-TIMEOUT
+    RC-124  return_code=124 → ENV-TIMEOUT        （timeout 命令自身超时退出）
+    RC-130  return_code=130 → ENV-INTERRUPTED    （SIGINT / Ctrl+C 中断）
+    RC-137  return_code=137 → ENV-SIGKILL        （SIGKILL：OOM Killer / kill -9 / 系统关闭）
+    RC-143  return_code=143 → ENV-SIGTERM        （SIGTERM：编排层主动终止）
+    TOUT    timed_out=True  → ENV-TIMEOUT        （CAI 框架超时标志兜底）
 """
 
 from __future__ import annotations
@@ -187,6 +191,63 @@ def _rc126_factory(tool_name: str = "", stderr_raw: str = "") -> FailureRootCaus
     )
 
 
+def _rc124_factory(tool_name: str = "", stderr_raw: str = "") -> FailureRootCause:
+    """RC-124 工厂：`timeout N cmd` 的超时退出（exit 124 为 GNU coreutils timeout 约定）。"""
+    tool_info = f" (tool={tool_name})" if tool_name else ""
+    return FailureRootCause(
+        dimension=_ENV,
+        sub_dimension="TIMEOUT",
+        evidence=f"return_code=124{tool_info}",
+        source="rule",
+        remediation_hint="timeout 命令设定的时限已到期，建议增大 timeout 参数或将任务拆分为更小批次",
+    )
+
+
+def _rc130_factory(tool_name: str = "", stderr_raw: str = "") -> FailureRootCause:
+    """RC-130 工厂：进程收到 SIGINT（128+2），通常为 Ctrl+C 或脚本主动发送。"""
+    tool_info = f" (tool={tool_name})" if tool_name else ""
+    return FailureRootCause(
+        dimension=_ENV,
+        sub_dimension="INTERRUPTED",
+        evidence=f"return_code=130{tool_info}",
+        source="rule",
+        remediation_hint="前台进程被 SIGINT 中断（Ctrl+C / kill -2），如为误操作请重新运行；如为预期行为则可忽略",
+    )
+
+
+def _rc137_factory(tool_name: str = "", stderr_raw: str = "") -> FailureRootCause:
+    """RC-137 工厂：进程收到 SIGKILL（128+9）。可能原因：OOM Killer、手动 kill -9、系统关闭。
+
+    使用 ENV-SIGKILL 而非 ENV-OOM_KILLED，以覆盖所有强制终止场景；
+    OOM 场景在 remediation_hint 中作为优先排查项列出。
+    """
+    tool_info = f" (tool={tool_name})" if tool_name else ""
+    return FailureRootCause(
+        dimension=_ENV,
+        sub_dimension="SIGKILL",
+        evidence=f"return_code=137{tool_info}",
+        source="rule",
+        remediation_hint=(
+            "进程被 SIGKILL 强制终止（exit 137 = 128+9）。"
+            "优先排查：① OOM Killer（dmesg | grep -i oom）；"
+            "② 手动 kill -9；③ 系统关机/重启。"
+            "内存密集型工具（如 hashcat）请限制内存用量或减小任务规模"
+        ),
+    )
+
+
+def _rc143_factory(tool_name: str = "", stderr_raw: str = "") -> FailureRootCause:
+    """RC-143 工厂：进程收到 SIGTERM（128+15），通常由编排层主动发出（如超时后清理）。"""
+    tool_info = f" (tool={tool_name})" if tool_name else ""
+    return FailureRootCause(
+        dimension=_ENV,
+        sub_dimension="SIGTERM",
+        evidence=f"return_code=143{tool_info}",
+        source="rule",
+        remediation_hint="进程收到 SIGTERM 被正常终止，通常由编排层在超时后主动清理发出；可检查超时配置或编排策略",
+    )
+
+
 DETERMINISTIC_RULES: list[_Rule] = [
     _ReturnCodeRule(
         name="RC-127",
@@ -199,6 +260,30 @@ DETERMINISTIC_RULES: list[_Rule] = [
         code=126,
         description="shell 通用约定：命令无执行权限",
         factory=_rc126_factory,
+    ),
+    _ReturnCodeRule(
+        name="RC-124",
+        code=124,
+        description="GNU coreutils timeout 约定：timeout N cmd 超时退出",
+        factory=_rc124_factory,
+    ),
+    _ReturnCodeRule(
+        name="RC-130",
+        code=130,
+        description="POSIX 约定（128+2）：SIGINT / Ctrl+C 中断",
+        factory=_rc130_factory,
+    ),
+    _ReturnCodeRule(
+        name="RC-137",
+        code=137,
+        description="POSIX 约定（128+9）：SIGKILL 强制终止（OOM / kill -9 / 系统关闭）",
+        factory=_rc137_factory,
+    ),
+    _ReturnCodeRule(
+        name="RC-143",
+        code=143,
+        description="POSIX 约定（128+15）：SIGTERM 正常终止（编排层主动清理）",
+        factory=_rc143_factory,
     ),
     _TimedOutRule(
         name="TOUT",

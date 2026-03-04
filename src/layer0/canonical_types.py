@@ -160,7 +160,6 @@ class SessionMeta:
         end_time:      会话结束时间戳；异常中断时为 None
         target_raw:    原始靶标描述（如 "http://127.0.0.1:7001"）
         total_cost:    LLM API 调用费用（美元，有则填写）
-        bar_score:     Layer1 计算后回填的会话 BAR 分数；适配器输出时为 None
         session_end_type: "normal" | "interrupted"（适配器能判断时填写）
         total_turns:   解析到的 turn 总数（适配器在完成 parse 后可选回填）
         raw_metadata:  框架特有原始信息
@@ -170,7 +169,6 @@ class SessionMeta:
     end_time: Optional[str] = None
     target_raw: Optional[str] = None
     total_cost: float = 0.0
-    bar_score: Optional[float] = None
     session_end_type: str = "unknown"  # "normal" | "interrupted" | "unknown"
     total_turns: int = -1
     raw_metadata: Dict[str, Any] = field(default_factory=dict)

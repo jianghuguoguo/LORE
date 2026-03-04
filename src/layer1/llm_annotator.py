@@ -32,20 +32,15 @@ from ..models import (
     AttackPhase,
     FailureRootCause,
     FailureRootCauseDimension,
-    RagAdoptionLevel,
-    RagAdoptionResult,
     SessionOutcome,
     TurnSequence,
-    _RAG_ADOPTION_WEIGHTS,
 )
 from ..prompts import (
     ATTACK_PHASE_SYSTEM,
     FAILURE_CAUSE_SYSTEM,
-    RAG_ADOPTION_SYSTEM,
     SESSION_OUTCOME_SYSTEM,
     build_attack_phase_prompt,
     build_failure_cause_prompt,
-    build_rag_adoption_prompt,
     build_session_outcome_prompt,
 )
 from ..utils.log_utils import get_logger
@@ -69,11 +64,10 @@ def annotate_with_llm(
 ) -> AnnotatedTurnSequence:
     """Phase 3 主入口：对 AnnotatedTurnSequence 补充 LLM 语义标注。
 
-    按顺序执行四个子任务：
+    按顧序执行三个子任务：
         A. 全量 attack_phase / outcome_label 分类
-        B. 失败根因 LLM 兜底（针对 llm_pending_failure_cause 事件）
-        C. RAG 行为因果判定
-        D. 会话整体目标达成判定
+        B. 失败根因 LLM 兄底（针对 llm_pending_failure_cause 事件）
+        C. 会话整体目标达成判定
 
     Args:
         ann_seq : Phase 2 规则层输出（会被就地修改并返回）
@@ -107,49 +101,7 @@ def annotate_with_llm(
             llm_call_count += c
             llm_error_count += e
 
-    # ── 任务 C：RAG 行为因果判定 ──────────────────────────────────────────────
-    rag_adoption_results: List[RagAdoptionResult] = []
-    for rag_id, rag_rec in seq.rag_index.items():
-        # 找到 RAG 后 N=3 个 Turn 内的事件作为行为窗口
-        behavior_window_events = seq.get_events_in_window(
-            rag_rec.turn_index + 1, window=3
-        ) + [
-            e for e in seq.all_events
-            if e.turn_index == rag_rec.turn_index + 1
-        ]
-        # 去重并只取前 5 个
-        seen_ids = set()
-        bw_unique = []
-        for ev in behavior_window_events:
-            if ev.event_id not in seen_ids:
-                seen_ids.add(ev.event_id)
-                bw_unique.append(ev)
-        bw_unique = bw_unique[:5]
-
-        result_obj, c, e = _run_rag_adoption(
-            rag_rec,
-            bw_unique,
-            ann_seq,
-            client,
-            target_info,
-        )
-        llm_call_count += c
-        llm_error_count += e
-        if result_obj:
-            rag_adoption_results.append(result_obj)
-
-    ann_seq.rag_adoption_results = rag_adoption_results
-
-    # 计算 BAR（行为采纳度均值）
-    if rag_adoption_results:
-        ann_seq.bar_score = round(
-            sum(r.adoption_weight for r in rag_adoption_results) / len(rag_adoption_results),
-            3,
-        )
-    else:
-        ann_seq.bar_score = 0.0
-
-    # ── 任务 D：会话整体目标达成判定 ─────────────────────────────────────────
+    # ── 任务 C：会话整体目标达成判定 ─────────────────────────────────────────
     outcome, c, e = _run_session_outcome(ann_seq, seq, client)
     llm_call_count += c
     llm_error_count += e
@@ -161,9 +113,8 @@ def annotate_with_llm(
     ann_seq.llm_error_count = llm_error_count
 
     logger.info(
-        "[llm_annotator] DONE session=%s llm_calls=%d errors=%d bar=%.3f outcome=%s",
+        "[llm_annotator] DONE session=%s llm_calls=%d errors=%d outcome=%s",
         session_id, llm_call_count, llm_error_count,
-        ann_seq.bar_score,
         ann_seq.session_outcome.outcome_label if ann_seq.session_outcome else "N/A",
     )
     return ann_seq
@@ -360,118 +311,7 @@ def _run_failure_cause(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 子任务 C：RAG 行为因果判定
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _run_rag_adoption(
-    rag_rec,
-    behavior_window_events,
-    ann_seq: AnnotatedTurnSequence,
-    client: LLMClient,
-    target_info: Optional[str],
-) -> tuple[Optional[RagAdoptionResult], int, int]:
-    """对单次 RAG 查询执行行为因果判定。返回 (RagAdoptionResult|None, call_count, error_count)。"""
-    # 构造行为窗口摘要
-    bw_summary = []
-    for ev in behavior_window_events:
-        # 找对应的 AnnotatedEvent 取 attack_phase
-        ann_ev = next(
-            (a for a in ann_seq.annotated_events if a.event_id == ev.event_id),
-            None,
-        )
-        result_summary = ""
-        if ev.result:
-            rc = ev.result.return_code
-            stdout_hint = ev.result.stdout_raw[:150] if ev.result.stdout_raw else ""
-            stderr_hint = ev.result.stderr_raw[:100] if ev.result.stderr_raw else ""
-            result_summary = f"rc={rc} stdout={stdout_hint!r} stderr={stderr_hint!r}"
-        bw_summary.append({
-            "tool_name": ev.call.tool_name,
-            "call_args": {
-                k: (v[:200] + "..." if isinstance(v, str) and len(v) > 200 else v)
-                for k, v in ev.call.call_args.items()
-            },
-            "result_summary": result_summary,
-            "attack_phase": ann_ev.attack_phase if ann_ev else None,
-        })
-
-    rag_result_text = rag_rec.rag_result or "（RAG 返回内容未记录）"
-
-    user_prompt = build_rag_adoption_prompt(
-        rag_query=rag_rec.query,
-        rag_result_summary=rag_result_text,
-        behavior_window=bw_summary,
-        target_info=target_info,
-    )
-
-    llm_result = client.chat_json(
-        [{"role": "user", "content": user_prompt}],
-        system=RAG_ADOPTION_SYSTEM,
-    )
-
-    if not llm_result.success or llm_result.parsed is None:
-        logger.warning(
-            "[llm_annotator] rag_adoption FAILED rag_id=%s: %s",
-            rag_rec.tool_call_id, llm_result.error,
-        )
-        return None, 1, 1
-
-    parsed = llm_result.parsed
-    level = int(parsed.get("adoption_level", 0))
-    level = max(0, min(3, level))
-    adoption_label = parsed.get("adoption_label", "ignored")
-    weight = _RAG_ADOPTION_WEIGHTS.get(level, 0.0)
-
-    result_obj = RagAdoptionResult(
-        rag_tool_call_id=rag_rec.tool_call_id,
-        query=rag_rec.query,
-        rag_turn_index=rag_rec.turn_index,
-        adoption_level=level,
-        adoption_label=adoption_label,
-        adoption_weight=weight,
-        reasoning=parsed.get("reasoning", ""),
-        behavior_window=[ev.event_id for ev in behavior_window_events],
-    )
-
-    # 构建复用的 adoption dict
-    rag_adoption_dict = {
-        "adoption_level": level,
-        "adoption_label": adoption_label,
-        "adoption_weight": weight,
-        "reasoning": parsed.get("reasoning", ""),
-    }
-
-    # 将 adoption 结果写回到对应 RAG 事件的 AnnotatedEvent
-    # 仅对 has_rag_context=True 的 RAG 事件写入完整 dict；has_rag_context=False 的保持 null
-    for ann_ev in ann_seq.annotated_events:
-        if (
-            ann_ev.base.call.action_category == ActionCategory.RAG_QUERY
-            and ann_ev.base.call.tool_call_id == rag_rec.tool_call_id
-        ):
-            if ann_ev.has_rag_context:
-                ann_ev.rag_adoption = rag_adoption_dict
-            ann_ev.rag_adoption_reasoning = parsed.get("reasoning", "")
-            break
-
-    # P1修复：将同一 rag_adoption dict 写回所有共享该 rag_query_ref 的下游 action 事件
-    # （一次 RAG 查询后可能跟随多个 action 事件，它们均有 has_rag_context=True）
-    for ann_ev in ann_seq.annotated_events:
-        if (
-            ann_ev.has_rag_context
-            and ann_ev.base.rag_query_ref == rag_rec.tool_call_id
-            and ann_ev.rag_adoption is None  # 仅填充尚未赋值的
-        ):
-            ann_ev.rag_adoption = rag_adoption_dict
-
-    logger.info(
-        "[llm_annotator] rag_adoption rag_id=%s level=%d label=%s",
-        rag_rec.tool_call_id, level, adoption_label,
-    )
-    return result_obj, 1, 0
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 子任务 D：会话整体目标达成判定
+# 子任务 C：会话整体目标达成判定
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _run_session_outcome(
@@ -509,20 +349,12 @@ def _run_session_outcome(
             "frc_dim": frc_dim,          # 失败根因维度（DEF=目标有防御/已打补丁）
         })
 
-    # RAG 采纳摘要
-    rag_summary = None
-    if ann_seq.rag_adoption_results:
-        labels = [r.adoption_label for r in ann_seq.rag_adoption_results]
-        avg_bar = ann_seq.bar_score
-        rag_summary = f"共{len(labels)}次RAG查询，采纳分布={labels}，BAR均值={avg_bar:.2f}"
-
     user_prompt = build_session_outcome_prompt(
         target_info=seq.metadata.target_raw,
         session_end_type=seq.metadata.session_end_type,
         total_events=ann_seq.total_events,
         events_summary=events_summary,
         deterministic_hits=ann_seq.deterministic_hits,
-        rag_adoption_summary=rag_summary,
     )
 
     llm_result = client.chat_json(
@@ -552,7 +384,6 @@ def _run_session_outcome(
         session_goal_achieved=bool(parsed.get("session_goal_achieved", False)),
         achieved_goals=parsed.get("achieved_goals", []),
         failed_goals=parsed.get("failed_goals", []),
-        bar_score=ann_seq.bar_score,
         reasoning=parsed.get("reasoning", ""),
         key_signals=all_key_signals,
     )

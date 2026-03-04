@@ -230,7 +230,6 @@ def extract_factual_experience_llm(
     session_id = ann_seq.metadata.session_id
     target_raw = ann_seq.metadata.target_raw
     session_outcome_str = "unknown"
-    bar_score = ann_seq.bar_score
 
     if ann_seq.session_outcome:
         session_outcome_str = ann_seq.session_outcome.outcome_label
@@ -316,7 +315,6 @@ def extract_factual_experience_llm(
         extraction_source=ExperienceSource.LLM,
         session_outcome=session_outcome_str,
         target_raw=target_raw,
-        session_bar_score=bar_score,
         tags=list(dict.fromkeys(tags)),
         # P1: 将 target_service / cve_ids 填入 metadata.applicable_constraints，支持检索时精确过滤
         applicable_constraints={

@@ -122,7 +122,6 @@ def dict_to_experience(d: Dict[str, Any]) -> Experience:
         extraction_source=ExperienceSource(meta_d.get("extraction_source", "rule")),
         session_outcome=meta_d.get("session_outcome", "unknown"),
         target_raw=meta_d.get("target_raw"),
-        session_bar_score=float(meta_d.get("session_bar_score", 0.0)),
         created_at=_parse_datetime_safe(meta_d.get("created_at")),
         extractor_version=meta_d.get("extractor_version", "1.0.0"),
         tags=meta_d.get("tags", []),

@@ -4,7 +4,7 @@ Phase 2 — Evidence Weight Calculation (EWC)
 为每条经验计算综合权重 W(E)，作为 Phase 3 融合投票的依据。
 
 权重模型（四维向量）：
-  w_quality  = session_bar_score × confidence        ∈ [0, 1]
+  w_quality  = confidence                              ∈ [0, 1]
   w_maturity = {raw:0.4, validated:0.7, consolidated:1.0}
   w_outcome  = {success:1.5, partial_success:1.0, failure:0.6}
   w_coverage = len(cve_ids) / MAX_CVE_PER_LAYER × 0.3 + 0.7  ∈ [0.7, 1.0]
@@ -64,8 +64,6 @@ _DECAY_LAMBDA: Dict[str, float] = {
     "METACOGNITIVE":    0.001,
     # CONCEPTUAL（抽象规律，极稳定）
     "CONCEPTUAL":       0.001,
-    # RAG_EVALUATION（评估统计，~140天）
-    "RAG_EVALUATION":   0.005,
 }
 _DECAY_LAMBDA_DEFAULT = 0.005
 
@@ -85,14 +83,6 @@ _W_MAX = 1.0
 # ─────────────────────────────────────────────────────────────────────────────
 # 辅助函数
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _get_session_bar_score(exp: Dict[str, Any]) -> float:
-    """从经验 metadata 读取 session_bar_score，缺省返回 0.5。"""
-    score = exp.get("metadata", {}).get("session_bar_score", None)
-    if score is None:
-        return 0.5
-    return float(score)
-
 
 def _get_confidence(exp: Dict[str, Any]) -> float:
     """读取经验置信度，缺省返回 0.5。"""
@@ -198,13 +188,13 @@ def compute_weight_for_exp(
     if now is None:
         now = datetime.now(tz=timezone.utc)
 
-    w_quality  = _get_session_bar_score(exp) * _get_confidence(exp)
+    w_quality  = _get_confidence(exp)
     w_maturity = _get_maturity_factor(exp)
     w_outcome  = _get_outcome_factor(exp)
     w_coverage = _get_cve_coverage(exp)
     w_decay    = _calc_decay_factor(exp, now)
 
-    # 零质量经验（bar_score=0）：保留最低影响
+    # 保留最低影响
     w_raw = max(w_quality * w_maturity * w_outcome * w_coverage, 0.001)
 
     # BUG-4 修复：slot_in_turn 微量扰动，打破同 session 内多条经验的等权僵局

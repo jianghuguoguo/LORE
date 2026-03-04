@@ -16,7 +16,7 @@ Metacognitive 经验提取器（LLM 驱动）
 - annotated_events 非空（至少有 1 个事件）
 
 LLM 输入构造：
-- 使用 sess 中已有的所有语义标注（attack_phase/outcome/frc/rag_adoption）
+- 使用 sess 中已有的所有语义标注（attack_phase/outcome/frc）
 - 不回溯原始日志（token 节省）
 - 输出直接映射 METACOGNITIVE_CONTENT_KEYS
 """
@@ -151,7 +151,6 @@ def _build_session_summary(ann_seq: AnnotatedTurnSequence) -> str:
     outcome_label = so.outcome_label if so else "unknown"
     achieved = (so.achieved_goals or []) if so else []
     failed = (so.failed_goals or []) if so else []
-    bar_score = ann_seq.bar_score
     so_reasoning = (so.reasoning or "")[:400] if so else ""
 
     # 智能采样事件（头部 + 关键 EXPLOITATION 成功 + 尾部）
@@ -169,25 +168,9 @@ def _build_session_summary(ann_seq: AnnotatedTurnSequence) -> str:
                 frc += f"/{ev.failure_root_cause.sub_dimension}"
             frc += "]"
         rag_flag = "[RAG引用]" if ev.base.has_rag_context else ""
-        adoption = ""
-        if ev.rag_adoption:
-            lv = ev.rag_adoption.get("adoption_level", -1)
-            if lv >= 0:
-                adoption = f"[采纳度={lv}]"
-        event_lines.append(f"  [{phase}] {tool} → {outcome}{frc}{rag_flag}{adoption}")
+        event_lines.append(f"  [{phase}] {tool} → {outcome}{frc}{rag_flag}")
 
-    # RAG 采纳统计
-    rag_results = ann_seq.rag_adoption_results or []
     rag_summary = ""
-    if rag_results:
-        adopted = sum(1 for r in rag_results if r.adoption_level >= 2)
-        rag_summary = (
-            f"RAG查询共 {len(rag_results)} 次，"
-            f"高采纳(>=2 级) {adopted} 次，"
-            f"BAR 分数 {bar_score:.2f}"
-        )
-    else:
-        rag_summary = f"本次会话无 RAG 查询（BAR={bar_score:.2f}）"
 
     # 失败根因统计（含子维度明细，帮助 LLM 生成精准规则）
     frc_detail: Dict[str, int] = {}
@@ -319,7 +302,6 @@ def extract_metacognitive_experience(
     target_raw = ann_seq.metadata.target_raw
     so = ann_seq.session_outcome
     session_outcome_str = so.outcome_label if so else "unknown"
-    bar_score = ann_seq.bar_score
 
     # 构建会话摘要（IP 已去除）
     summary = _build_session_summary(ann_seq)
@@ -381,7 +363,6 @@ def extract_metacognitive_experience(
     content: Dict[str, Any] = {
         "session_goal": str(parsed.get("session_goal", target_raw or "未知"))[:200],
         "session_outcome": session_outcome_str,
-        "bar_score": float(bar_score),
         # R-05 核心字段
         "decision_mistakes": decision_mistakes,
         "missed_opportunities": missed_opportunities,
@@ -416,9 +397,8 @@ def extract_metacognitive_experience(
         extraction_source=ExperienceSource.LLM,
         session_outcome=session_outcome_str,
         target_raw=target_raw,
-        session_bar_score=bar_score,
         tags=list(dict.fromkeys(
-            [session_outcome_str, "metacognitive", f"bar_{bar_score:.1f}"] + rule_tags
+            [session_outcome_str, "metacognitive"] + rule_tags
         )),
     )
 

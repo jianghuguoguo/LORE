@@ -161,14 +161,6 @@ def              format_exp_for_rag(exp: Dict[str, Any]) -> str:
             for lesson in lessons[:5]:
                 lines.append(f"  - {lesson}")
 
-    elif layer == "RAG_EVALUATION":
-        util = content.get("rag_utility_score")
-        ctx = content.get("context_coverage", "")
-        if util is not None:
-            lines.append(f"RAG 效用评分: {util}")
-        if ctx:
-            lines.append(f"上下文覆盖: {ctx}")
-
     else:
         # 通用序列化
         for k, v in list(content.items())[:8]:

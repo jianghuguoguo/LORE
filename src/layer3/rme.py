@@ -11,7 +11,6 @@ Phase 3 — Rule Merge Engine (RME)
   FACTUAL_LLM      — CVE地图合并 + exploitation_results按CVE投票 + ineffective_vectors并集
   METACOGNITIVE    — key_lessons语义去重(rule_fingerprint) + decision_mistakes加权合并
   CONCEPTUAL       — core_insight LLM综合 + applicable_conditions频次加权
-  RAG_EVALUATION   — rag_adoption_stats聚合 + core_insight合并
 
 冲突检测（§10.2 矛盾评分）：
   outcome_diff：同一等价集内 success vs failure 经验的比例差
@@ -943,152 +942,6 @@ def _merge_conceptual(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict], Li
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RAG_EVALUATION 融合
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _merge_rag_evaluation(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict], List[str]]:
-    """rag_adoption_stats 加权聚合 + session_breakdown + query_effectiveness + recommendations。
-
-    原实现仅汇总统计数字，无结构化分析导致 recommendations/query_effectiveness 始终为空。
-    修复：基于逐 session 的 bar_score / adoption_rate 推导各分析字段。
-    """
-    notes: List[str] = []
-
-    total_queries, useful_adoptions = 0, 0
-    bar_scores: List[float] = []
-    session_breakdown: Dict[str, Dict] = {}
-
-    for we in wes.weighted_exps:
-        stats = we.exp.get("content", {}).get("rag_adoption_stats", {})
-        tq = stats.get("total_queries", 0)
-        ua = stats.get("useful_adoptions", 0)
-        bs = stats.get("bar_score", None)
-        total_queries    += tq
-        useful_adoptions += ua
-        if bs is not None:
-            bar_scores.append(float(bs))
-        sid = we.exp.get("metadata", {}).get("source_session_id", "")[:8]
-        session_breakdown[sid] = {
-            "total_queries":    tq,
-            "useful_adoptions": ua,
-            "adoption_rate":    round(ua / tq, 4) if tq > 0 else 0.0,
-            "bar_score":        round(float(bs), 4) if bs is not None else None,
-        }
-
-    avg_bar = round(sum(bar_scores) / len(bar_scores), 4) if bar_scores else 0.0
-    adoption_rate = round(useful_adoptions / total_queries, 4) if total_queries > 0 else 0.0
-    bar_std = round(statistics.stdev(bar_scores), 4) if len(bar_scores) >= 2 else 0.0
-
-    best_we = max(wes.weighted_exps, key=_exp_weight)
-    dom_content = best_we.exp.get("content", {})
-
-    # applicable_conditions：并集
-    cond_set: List[str] = []
-    for we in wes.weighted_exps:
-        conds = we.exp.get("content", {}).get("applicable_conditions", [])
-        if isinstance(conds, list):
-            for c in conds:
-                if c and c not in cond_set:
-                    cond_set.append(c)
-
-    # ── query_effectiveness：按 BAR 分区间对 session 分组，供论文 RAG Ablation 分析 ──
-    # 原始经验仅记录整 session 的聚合 bar_score，无逐查询 query_type 字段；
-    # 以 session 为粒度将其分入 high/mid/low 三档，并标注高 / 低采纳率 session。
-    high_sessions = [s for s, d in session_breakdown.items() if (d["bar_score"] or 0) >= 0.5]
-    mid_sessions  = [s for s, d in session_breakdown.items()
-                     if 0.3 <= (d["bar_score"] or 0) < 0.5]
-    low_sessions  = [s for s, d in session_breakdown.items() if (d["bar_score"] or 0) < 0.3]
-    high_adopt_sessions = [s for s, d in session_breakdown.items() if d["adoption_rate"] >= 0.5]
-    low_adopt_sessions  = [s for s, d in session_breakdown.items() if d["adoption_rate"] <  0.3]
-
-    def _mean(lst: List[str]) -> float:
-        return round(
-            sum(session_breakdown[s]["bar_score"] or 0.0 for s in lst) / len(lst), 4
-        ) if lst else 0.0
-
-    query_effectiveness = {
-        "high_bar_sessions": {
-            "session_ids": high_sessions, "count": len(high_sessions),
-            "avg_bar":     _mean(high_sessions),
-            "note": "bar_score ≥ 0.5，Agent 对检索结果质量判断为高，采纳率相应偏高",
-        },
-        "mid_bar_sessions": {
-            "session_ids": mid_sessions, "count": len(mid_sessions),
-            "avg_bar":     _mean(mid_sessions),
-            "note": "bar_score 0.3–0.5，检索结果质量中等，部分条目被采纳",
-        },
-        "low_bar_sessions": {
-            "session_ids": low_sessions, "count": len(low_sessions),
-            "avg_bar":     _mean(low_sessions),
-            "note": "bar_score < 0.3，检索结果与查询语义匹配差，Agent 几乎不采纳",
-        },
-        "bar_score_std":        bar_std,
-        "high_adopt_sessions":  high_adopt_sessions,
-        "low_adopt_sessions":   low_adopt_sessions,
-        "overall_adoption_rate": adoption_rate,
-        "overall_avg_bar":       avg_bar,
-    }
-
-    # ── recommendations：基于采纳率 / BAR 方差 / 低效 session 生成结构化建议 ──────
-    recommendations: List[str] = []
-    if adoption_rate < 0.40:
-        recommendations.append(
-            f"采纳率仅 {adoption_rate:.1%}（{useful_adoptions}/{total_queries} 次检索被使用）："
-            "建议提高检索精度（调高相似度阈值或缩小 top-k），减少低相关经验的噪声干扰。"
-        )
-    if avg_bar < 0.40:
-        recommendations.append(
-            f"平均 BAR 分 {avg_bar:.3f} 低于阈值 0.4："
-            "建议改进经验内容质量，增加结构化字段（IF/THEN/NOT）覆盖度以提升检索匹配度。"
-        )
-    if bar_std > 0.15:
-        recommendations.append(
-            f"session 间 BAR 分标准差 {bar_std:.3f} 偏高，各 session 检索效果差异显著："
-            "建议按攻击目标类型（WebLogic/Druid/CouchDB）分桶索引，减少跨类别语义干扰。"
-        )
-    if low_sessions:
-        recommendations.append(
-            f"低 BAR session（{', '.join(low_sessions)}）共 {len(low_sessions)} 个："
-            "建议回溯其检索 query 类型，判断是否因 METACOGNITIVE 层泛化 query 偏多所致，"
-            "可考虑为 METACOGNITIVE / CONCEPTUAL 层单独设置更高的检索阈值。"
-        )
-    if not recommendations:
-        recommendations.append(
-            f"整体 RAG 质量良好（adoption_rate={adoption_rate:.1%}, avg_bar={avg_bar:.3f}），"
-            "当前检索策略无需调整。"
-        )
-
-    notes.append(
-        f"rag_stats: total_queries={total_queries}, useful_adoptions={useful_adoptions}, "
-        f"adoption_rate={adoption_rate:.2f}, avg_bar={avg_bar}, bar_std={bar_std}"
-    )
-    notes.append(
-        f"session_breakdown: {len(session_breakdown)} sessions; "
-        f"high_bar={len(high_sessions)}, mid_bar={len(mid_sessions)}, low_bar={len(low_sessions)}"
-    )
-
-    fused_content = {
-        "pattern_type":          dom_content.get("pattern_type", "rag_utility"),
-        "core_insight":          dom_content.get("core_insight", ""),
-        "applicable_conditions": cond_set,
-        "rag_adoption_stats": {
-            "total_queries":    total_queries,
-            "useful_adoptions": useful_adoptions,
-            "adoption_rate":    adoption_rate,
-            "avg_bar_score":    avg_bar,
-            "bar_score_std":    bar_std,
-            "session_count":    len(wes.weighted_exps),
-        },
-        "session_breakdown":   session_breakdown,
-        "query_effectiveness": query_effectiveness,
-        "recommendations":     recommendations,
-        "supporting_evidence": dom_content.get("supporting_evidence", []),
-        "fused_from_count":    len(wes.weighted_exps),
-    }
-    return fused_content, [], notes
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # 层路由：按 knowledge_layer 分派到具体融合函数
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1099,7 +952,6 @@ _MERGE_DISPATCH = {
     "FACTUAL_LLM":     _merge_factual_llm,
     "METACOGNITIVE":   _merge_metacognitive,
     "CONCEPTUAL":      _merge_conceptual,
-    "RAG_EVALUATION":  _merge_rag_evaluation,
 }
 
 

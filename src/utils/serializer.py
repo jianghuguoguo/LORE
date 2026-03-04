@@ -93,11 +93,11 @@ def serialize_turn_sequence(seq: TurnSequence, indent: Optional[int] = None) -> 
 
 
 def save_turn_sequence(seq: TurnSequence, output_path: Path) -> None:
-    """将 TurnSequence 保存至 JSONL 文件（整个序列作为一行）"""
+    """将 TurnSequence 保存至文件（indent=2 缩进格式，便于人工阅读）"""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     d = _dataclass_to_dict(seq)
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False)
+        json.dump(d, f, ensure_ascii=False, indent=2)
         f.write("\n")
 
 
@@ -229,10 +229,10 @@ def _deserialize_atomic_event(d: Dict[str, Any]) -> AtomicEvent:
 
 
 def load_turn_sequence(input_path: Path) -> TurnSequence:
-    """从已序列化的 JSONL 文件（每行一个 TurnSequence）加载"""
+    """从已序列化的 JSON 文件加载 TurnSequence（支持单行紧凑格式与多行缩进格式）"""
     with open(input_path, encoding="utf-8") as f:
-        line = f.readline().strip()
-        if not line:
+        content = f.read().strip()
+        if not content:
             raise ValueError(f"Empty file: {input_path}")
-        data = json.loads(line)
+        data = json.loads(content)
     return deserialize_turn_sequence(data)

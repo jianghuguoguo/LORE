@@ -92,7 +92,7 @@ class WeightedExperience:
 
     Attributes:
         exp_id          : 原始经验 ID
-        w_quality       : 质量因子 = session_bar_score × confidence
+        w_quality       : 质量因子 = confidence
         w_maturity      : 成熟度因子（raw=0.4, validated=0.7, consolidated=1.0）
         w_outcome       : 结果因子（success=1.5, partial_success=1.0, failure=0.6）
         w_coverage      : CVE 覆盖度加成因子

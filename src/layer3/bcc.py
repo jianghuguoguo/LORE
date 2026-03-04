@@ -390,7 +390,6 @@ def build_consolidated_exp(
         "source_exp_ids":       [we.exp_id for we in wes.weighted_exps],
         "extraction_source":    "xpec_rme_v1.2",
         "session_outcome":      _infer_outcome(wes),
-        "session_bar_score":    _infer_bar_score(wes),
         "created_at":           now_iso,
         "extractor_version":    "layer3-1.0.0",
         "fusion_algorithm":     "XPEC-RME-v1.2_BCC-v1.0",
@@ -446,17 +445,6 @@ def _infer_outcome(wes: WeightedEquivalenceSet) -> str:
     elif failure_w > success_w:
         return "failure"
     return "mixed"
-
-
-def _infer_bar_score(wes: WeightedEquivalenceSet) -> float:
-    """推断平均 bar_score（加权平均）。"""
-    total_w, weighted_sum = 0.0, 0.0
-    for we in wes.weighted_exps:
-        bar = we.exp.get("metadata", {}).get("session_bar_score", 0.5)
-        w   = we.weight_effective
-        weighted_sum += bar * w
-        total_w      += w
-    return round(weighted_sum / total_w, 4) if total_w > 0 else 0.5
 
 
 def _build_tags(mr: MergeResult) -> List[str]:

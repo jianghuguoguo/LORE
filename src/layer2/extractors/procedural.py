@@ -440,7 +440,6 @@ def _extract_pos_from_event(
     counter: int,
     session_outcome_str: str,
     target_raw: Optional[str],
-    bar_score: float,
 ) -> Optional[Experience]:
     """从单个成功事件提取 PROCEDURAL_POS 经验条目。"""
     command = _get_command_text(event)
@@ -538,7 +537,6 @@ def _extract_pos_from_event(
         extraction_source=ExperienceSource.RULE,
         session_outcome=session_outcome_str,
         target_raw=target_raw,
-        session_bar_score=bar_score,
         tags=tags,
     )
 
@@ -562,7 +560,6 @@ def _extract_neg_from_event(
     counter: int,
     session_outcome_str: str,
     target_raw: Optional[str],
-    bar_score: float,
 ) -> Optional[Experience]:
     """从单个失败事件提取 PROCEDURAL_NEG 经验条目。"""
     frc = event.failure_root_cause
@@ -628,7 +625,6 @@ def _extract_neg_from_event(
         extraction_source=ExperienceSource.RULE if frc.source == "rule" else ExperienceSource.LLM,
         session_outcome=session_outcome_str,
         target_raw=target_raw,
-        session_bar_score=bar_score,
         tags=list(dict.fromkeys(tags)),
     )
 
@@ -794,7 +790,6 @@ def extract_procedural_experiences(
     session_id = ann_seq.metadata.session_id
     target_raw = ann_seq.metadata.target_raw
     session_outcome_str = "unknown"
-    bar_score = ann_seq.bar_score
 
     if ann_seq.session_outcome:
         session_outcome_str = ann_seq.session_outcome.outcome_label
@@ -818,7 +813,7 @@ def extract_procedural_experiences(
         ):
             exp = _extract_pos_from_event(
                 event, session_id, counter,
-                session_outcome_str, target_raw, bar_score,
+                session_outcome_str, target_raw,
             )
             if exp:
                 # 语义去重：相同会话 + 相同工具 + 相同阆段 + 相同命令前缀 视为重复
@@ -841,7 +836,7 @@ def extract_procedural_experiences(
         ):
             exp = _extract_neg_from_event(
                 event, session_id, counter,
-                session_outcome_str, target_raw, bar_score,
+                session_outcome_str, target_raw,
             )
             if exp:
                 # 语义去重：相同会话 + 相同失败维度大类 + 相同工具 + 相同命令前缀

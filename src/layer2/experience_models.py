@@ -30,19 +30,12 @@ class KnowledgeLayer(str, Enum):
     PROCEDURAL_POS : 有效操作步骤（成功的命令/代码模板）
     PROCEDURAL_NEG : 无效操作记录（失败命令 + 根因 + 建议）
     METACOGNITIVE  : 会话级元认知反思（决策回顾 + 经验教训）
-    RAG_EVALUATION : RAG 效用元评估（系统优化用，**不**进入 Agent 检索池）
-
-    NOTE: RAG_EVALUATION 与 CONCEPTUAL 分离，避免 Agent 在检索攻击策略时
-    检索到 "RAG 效用分析" 类噪声记录。仅 RAG 系统优化流程查询此层。
-    Layer 3 融合周期：>=3 条同 target_service+pattern_type 的 raw CONCEPTUAL
-    经过 Layer3 聚合后可升为 validated（接口预留，待 Layer3 实现）。
     """
     FACTUAL        = "FACTUAL"
     CONCEPTUAL     = "CONCEPTUAL"
     PROCEDURAL_POS = "PROCEDURAL_POS"
     PROCEDURAL_NEG = "PROCEDURAL_NEG"
     METACOGNITIVE  = "METACOGNITIVE"
-    RAG_EVALUATION = "RAG_EVALUATION"   # 新增：rag_utility 独立层，不参与主检索
 
 
 class ExperienceMaturity(str, Enum):
@@ -86,7 +79,6 @@ class ExperienceMetadata:
         extraction_source  : 提取方式（rule / llm / mixed）
         session_outcome    : 会话结果标签（success / partial_success / failure）
         target_raw         : 渗透目标描述（原始，不解析）
-        session_bar_score  : 会话 BAR 分数（行为采纳度）
         created_at         : 提取时间戳
         extractor_version  : 提取器版本号（便于重跑时对比）
         tags               : 自由标签（CVE ID / 服务名 / 工具名等，检索用）
@@ -97,7 +89,6 @@ class ExperienceMetadata:
     extraction_source: ExperienceSource = ExperienceSource.RULE
     session_outcome: str = "unknown"
     target_raw: Optional[str] = None
-    session_bar_score: float = 0.0
     created_at: datetime = field(default_factory=datetime.utcnow)
     extractor_version: str = "1.0.0"
     tags: List[str] = field(default_factory=list)
@@ -140,7 +131,6 @@ class ExperienceMetadata:
 # METACOGNITIVE content 约定字段：
 #   session_goal     : str    本次渗透想达成的目标
 #   session_outcome  : str    实际结果
-#   bar_score        : float  RAG 行为采纳度
 #   key_lessons      : List[str]  3-5条经验教训
 #   decision_insights: List[str]  关键决策点及其得失
 #   rag_effectiveness: str    RAG 对本次会话的影响评估
@@ -181,7 +171,7 @@ PROCEDURAL_NEG_CONTENT_KEYS = {
 }
 
 METACOGNITIVE_CONTENT_KEYS = {
-    "session_goal", "session_outcome", "bar_score",
+    "session_goal", "session_outcome",
     # 结构化决策反思字段（R-05 要求）
     "decision_mistakes",      # [{mistake, consequence, rule: 'IF-THEN'}]
     "missed_opportunities",   # [可能有效但未尝试的路径]
@@ -206,19 +196,6 @@ CONCEPTUAL_CONTENT_KEYS = {
     "confidence_basis",
     # confidence=0.3 (init), maturity=raw; Layer3 升为 validated 时 confidence=min(0.3*n,0.9)
 }
-
-# RAG_EVALUATION content 约定字段（不参与 Agent 检索，仅供 RAG 系统优化）:
-#   pattern_type    : str  固定为 "rag_utility"
-#   applicable_conditions: dict/list  何种情境下 RAG 有效
-#   core_insight    : str  RAG 效用规律
-#   supporting_evidence: List[str]
-#   confidence_basis: str
-#   rag_adoption_stats: {total_queries, useful_adoptions, bar_score}
-RAG_EVALUATION_CONTENT_KEYS = {
-    "pattern_type", "applicable_conditions", "core_insight",
-    "supporting_evidence", "confidence_basis", "rag_adoption_stats",
-}
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 核心数据类：Experience
@@ -319,11 +296,6 @@ class ExperienceBundle:
     @property
     def conceptual_count(self) -> int:
         return sum(1 for e in self.experiences if e.knowledge_layer == KnowledgeLayer.CONCEPTUAL)
-
-    @property
-    def rag_evaluation_count(self) -> int:
-        """RAG 效用元评估条目数（不进入 Agent 检索池）。"""
-        return sum(1 for e in self.experiences if e.knowledge_layer == KnowledgeLayer.RAG_EVALUATION)
 
     def by_layer(self, layer: KnowledgeLayer) -> List[Experience]:
         """按知识层过滤经验条目。"""

@@ -20,7 +20,7 @@ Phase 5 — Knowledge Lifecycle Management (KLM)
 操作 3 — 时效性衰减（Temporal Decay）：
   对所有 lifecycle_status="active" 的原始经验，按知识层λ值计算衰减后权重：
     W_effective(E,t) = W_base × exp(-λ × Δt_days)
-  W_base = session_bar_score × confidence × maturity_factor
+  W_base = confidence × maturity_factor
   若 W_effective < 0.10 → lifecycle_status = "suspended"
 
 输出：
@@ -60,7 +60,6 @@ _DECAY_RATES: Dict[str, float] = {
     "PROCEDURAL_POS":   0.005,
     "METACOGNITIVE":    0.001,   # ~693 天（决策规则，极稳定）
     "CONCEPTUAL":       0.001,
-    "RAG_EVALUATION":   0.010,   # ~69 天（工具/RAG 有效性，迭代最快）
 }
 _DECAY_DEFAULT      = 0.005   # 未知层使用默认值
 _SUSPEND_THRESHOLD  = 0.10    # W_effective < 此值 → suspended（退出检索索引）
@@ -118,14 +117,14 @@ def _compute_temporal_w(exp: Dict[str, Any], now: datetime) -> float:
     """计算原始经验的时效衰减后权重 W_effective(E, t)。
 
     公式：
-        W_base    = session_bar_score × confidence × maturity_factor
+        W_base    = confidence × maturity_factor
         W_effective = W_base × exp(-λ × Δt_days)
 
     其中 maturity_factor: raw=0.4, validated=0.7, consolidated=1.0
     λ 由 knowledge_layer 决定（见 _DECAY_RATES）
 
     Args:
-        exp : 原始经验 dict（含 metadata.session_bar_score、confidence 等）
+        exp : 原始经验 dict（含 metadata.confidence 等）
         now : 当前时间（用于计算 Δt）
 
     Returns:
@@ -134,12 +133,11 @@ def _compute_temporal_w(exp: Dict[str, Any], now: datetime) -> float:
     layer      = exp.get("knowledge_layer", "FACTUAL_RULE")
     lam        = _DECAY_RATES.get(layer, _DECAY_DEFAULT)
 
-    bar_score  = float(exp.get("metadata", {}).get("session_bar_score", 0.5))
     confidence = float(exp.get("confidence", 0.5))
     maturity   = exp.get("maturity", "raw")
     mat_factor = {"raw": 0.4, "validated": 0.7, "consolidated": 1.0}.get(maturity, 0.4)
 
-    w_base = bar_score * confidence * mat_factor
+    w_base = confidence * mat_factor
 
     created_str = exp.get("metadata", {}).get("created_at", "")
     delta_days  = 0.0

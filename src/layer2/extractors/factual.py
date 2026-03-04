@@ -479,8 +479,8 @@ def _make_factual_exp(
     service_type: str,
     raw_evidence: str,
     target_raw: Optional[str],
-    bar_score: float,
-    session_outcome_str: str,
+    bar_score: float = 0.0,  # unused, retained for backward compat
+    session_outcome_str: str = "unknown",
 ) -> Experience:
     """构造单条 FACTUAL 经验条目。"""
     tool_name = event.base.call.tool_name
@@ -520,7 +520,6 @@ def _make_factual_exp(
         extraction_source=ExperienceSource.RULE,
         session_outcome=session_outcome_str,
         target_raw=target_raw,
-        session_bar_score=bar_score,
         tags=tags,
     )
 
@@ -554,7 +553,6 @@ def extract_factual_experiences(
     session_id = ann_seq.metadata.session_id
     target_raw = ann_seq.metadata.target_raw
     session_outcome_str = "unknown"
-    bar_score = ann_seq.bar_score
     if ann_seq.session_outcome:
         session_outcome_str = ann_seq.session_outcome.outcome_label
 
@@ -658,7 +656,6 @@ def extract_factual_experiences(
             service_type=service_type,
             raw_evidence=raw_output,
             target_raw=target_raw,
-            bar_score=bar_score,
             session_outcome_str=session_outcome_str,
         )
 

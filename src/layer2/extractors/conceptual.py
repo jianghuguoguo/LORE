@@ -1,7 +1,7 @@
 """
 Conceptual 经验提取器（LLM 驱动）
 =====================================
-在单个会话内归纳「概念性规律」（CONCEPTUAL layer）和「RAG 效用评估」（RAG_EVALUATION layer）。
+在单个会话内归纳「概念性规律」（CONCEPTUAL layer）。
 
 与 METACOGNITIVE（会话回顾）不同，CONCEPTUAL 专注于从
 事件序列中归纳出可泛化的攻击模式/防御规避洞察，适合后续
@@ -9,15 +9,12 @@ Conceptual 经验提取器（LLM 驱动）
 
 触发条件：
   - 会话包含 ≥ 2 个 EXPLOITATION 或 ESCALATION 成功事件，或
-  - 会话包含 ≥ 3 个 PROCEDURAL_NEG 事件（失败经验多，规律显著），或
-  - 会话有 RAG 有效采纳结果（adoption_level ≥ 2）
+  - 会话包含 ≥ 3 个 PROCEDURAL_NEG 事件（失败经验多，规律显著）
 
-每个会话最多生成 2 条经验：
+每个会话最多生成 1 条经验：
   1. CONCEPTUAL：主攻击规律（attack_strategy/vulnerability_pattern/...）
      - applicable_conditions 为结构化 dict（含 positive/negative/retrieval_triggers）
      - 初始 maturity=raw, confidence=0.3（Layer 3 融合时升级为 validated）
-  2. RAG_EVALUATION：RAG 效用评估（rag_utility pattern_type）——仅当有效 RAG 采纳时生成
-     - **独立存储，不进入 Agent 检索池**，仅供系统优化用途
 """
 
 from __future__ import annotations
@@ -70,16 +67,9 @@ def _should_extract_conceptual(ann_seq: AnnotatedTurnSequence) -> bool:
         1 for e in ann_seq.annotated_events
         if e.failure_root_cause is not None
     )
-    # 仅当 adoption_level ≥ 2 的 RAG 结果才算「有效采纳」
-    has_useful_rag = any(
-        r.adoption_level >= 2
-        for r in (ann_seq.rag_adoption_results or [])
-    )
-
     return (
         exploit_success >= _MIN_SUCCESS_FOR_CONCEPTUAL
         or failure_count >= _MIN_FAILURE_FOR_CONCEPTUAL
-        or has_useful_rag
     )
 
 
@@ -149,21 +139,10 @@ def _build_conceptual_input(ann_seq: AnnotatedTurnSequence) -> str:
             all_text_parts.append(raw_text)
     cve_ids = extract_cve_ids(" ".join(all_text_parts))
 
-    rag_info = ""
-    if ann_seq.rag_adoption_results:
-        adoptions = [r.adoption_level for r in ann_seq.rag_adoption_results]
-        useful = [a for a in adoptions if a >= 2]
-        rag_info = (
-            f"RAG查询 {len(adoptions)} 次，有效采纳 {len(useful)} 次，"
-            f"平均采纳度 {sum(adoptions)/len(adoptions):.1f}，"
-            f"BAR 分数 {ann_seq.bar_score:.2f}"
-        )
-
     lines = [
         f"目标：{target}",
         f"最终结果：{outcome_label}",
         f"涉及 CVE：{', '.join(cve_ids) if cve_ids else '无'}",
-        f"RAG 信息：{rag_info or '无 RAG 查询'}",
         f"",
         "关键事件序列摘要：",
     ] + phase_outcome_pairs
@@ -197,7 +176,6 @@ def extract_conceptual_experiences(
     target_raw = ann_seq.metadata.target_raw
     so = ann_seq.session_outcome
     session_outcome_str = so.outcome_label if so else "unknown"
-    bar_score = ann_seq.bar_score
 
     results: List[Experience] = []
 
@@ -210,7 +188,6 @@ def extract_conceptual_experiences(
             session_id=session_id,
             target_raw=target_raw,
             session_outcome_str=session_outcome_str,
-            bar_score=bar_score,
             ann_seq=ann_seq,
             exp_counter=exp_counter,
         )
@@ -219,22 +196,7 @@ def extract_conceptual_experiences(
             exp_counter += 1
 
     # ── 第 2 条：RAG 效用规律（仅当有效 RAG 采纳时生成）────────────────────
-    has_useful_rag = any(
-        r.adoption_level >= 2
-        for r in (ann_seq.rag_adoption_results or [])
-    )
-    if has_useful_rag:
-        rag_exp = _extract_rag_utility_experience(
-            ann_seq=ann_seq,
-            client=client,
-            session_id=session_id,
-            target_raw=target_raw,
-            session_outcome_str=session_outcome_str,
-            bar_score=bar_score,
-            exp_counter=exp_counter,
-        )
-        if rag_exp:
-            results.append(rag_exp)
+    # RAG_EVALUATION 层已删除，不再提取第 2 条经验
 
     return results
 
@@ -244,7 +206,6 @@ def _build_experience_from_parsed(
     session_id: str,
     target_raw: Optional[str],
     session_outcome_str: str,
-    bar_score: float,
     ann_seq: AnnotatedTurnSequence,
     exp_counter: int,
 ) -> Optional[Experience]:
@@ -285,7 +246,6 @@ def _build_experience_from_parsed(
         extraction_source=ExperienceSource.LLM,
         session_outcome=session_outcome_str,
         target_raw=target_raw,
-        session_bar_score=bar_score,
         tags=["conceptual", pattern_type, session_outcome_str]
         + _extract_retrieval_triggers(parsed.get("applicable_conditions", {})),
     )
@@ -299,97 +259,6 @@ def _build_experience_from_parsed(
         # Layer3 聚合 ≥₃条同类时可升为 validated（接口预留）
         maturity=ExperienceMaturity.RAW,
         confidence=0.3,
-    )
-
-
-def _extract_rag_utility_experience(
-    ann_seq: AnnotatedTurnSequence,
-    client: LLMClient,
-    session_id: str,
-    target_raw: Optional[str],
-    session_outcome_str: str,
-    bar_score: float,
-    exp_counter: int,
-) -> Optional[Experience]:
-    """生成第 2 条 CONCEPTUAL 经验：RAG 效用规律（rag_utility pattern_type）。"""
-    from ...prompts import CONCEPTUAL_SYSTEM, build_rag_utility_prompt  # noqa: F401
-
-    rag_results = ann_seq.rag_adoption_results or []
-    useful = [r for r in rag_results if r.adoption_level >= 2]
-
-    # 构建 RAG 效用摘要输入
-    lines = [
-        f"目标：{ann_seq.metadata.target_raw or '未知'}",
-        f"最终结果：{session_outcome_str}",
-        f"BAR 分数：{bar_score:.2f}",
-        f"RAG 有效采纳次数：{len(useful)} / {len(rag_results)}",
-        "",
-        "有效 RAG 采纳事件（adoption_level≥2）：",
-    ]
-    for r in useful[:10]:
-        lines.append(
-            f"  - 查询：{(r.query or '')[:80]}  采纳度：{r.adoption_level}"
-            + (f"  推理：{str(r.reasoning or '')[:80]}" if r.reasoning else "")
-        )
-
-    input_text = "\n".join(lines)
-
-    try:
-        user_prompt = build_rag_utility_prompt(input_text)
-        raw = client.chat(
-            system_prompt=CONCEPTUAL_SYSTEM,
-            user_prompt=user_prompt,
-            temperature=0.2,
-            max_tokens=600,
-        )
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```", 2)[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip().rstrip("```").strip()
-        parsed = json.loads(raw)
-    except Exception as e:
-        logger.warning("[conceptual/rag_utility] LLM 失败 session=%s err=%s", session_id[:8], e)
-        return None
-
-    core_insight = str(parsed.get("core_insight", "")).strip()
-    if not core_insight or len(core_insight) < 20:
-        return None
-
-    content: Dict[str, Any] = {
-        "pattern_type": "rag_utility",
-        "applicable_conditions": _ensure_str_list(parsed.get("applicable_conditions", []))[:5],
-        "core_insight": core_insight[:400],
-        "supporting_evidence": _ensure_str_list(parsed.get("supporting_evidence", []))[:5],
-        "confidence_basis": str(parsed.get("confidence_basis", ""))[:200],
-        "rag_adoption_stats": {
-            "total_queries": len(rag_results),
-            "useful_adoptions": len(useful),
-            "bar_score": bar_score,
-        },
-    }
-
-    all_turn_indices = list(dict.fromkeys(e.turn_index for e in ann_seq.annotated_events))
-    metadata = ExperienceMetadata(
-        source_session_id=session_id,
-        source_event_ids=[e.event_id for e in ann_seq.annotated_events[:10]],
-        source_turn_indices=all_turn_indices,
-        extraction_source=ExperienceSource.LLM,
-        session_outcome=session_outcome_str,
-        target_raw=target_raw,
-        session_bar_score=bar_score,
-        tags=["rag_evaluation", "rag_utility", session_outcome_str],
-    )
-
-    # C-1: RAG 效用评估独立存储为 RAG_EVALUATION 层，不参与 Agent 检索池
-    return Experience(
-        exp_id=f"exp_{session_id[:8]}_{exp_counter:04d}",
-        knowledge_layer=KnowledgeLayer.RAG_EVALUATION,
-        content=content,
-        metadata=metadata,
-        maturity=ExperienceMaturity.RAW,
-        confidence=0.70,
     )
 
 
