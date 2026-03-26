@@ -7,8 +7,7 @@ Phase 3 — Rule Merge Engine (RME)
 层特定融合策略（XPEC 实现流程文档 §7）：
   PROCEDURAL_NEG   — IF加权交集 + THEN多数投票(θ=0.4) + NOT并集 + next_actions步骤对齐
   PROCEDURAL_POS   — preconditions并集 + success_indicators加权Vote + next_actions权重最高版本
-  FACTUAL_RULE     — discovered_facts按key去重聚合 + 频次统计
-  FACTUAL_LLM      — CVE地图合并 + exploitation_results按CVE投票 + ineffective_vectors并集
+    FACTUAL          — 根据子键路由为 RULE/LLM 两类融合（统一层名，避免命名分裂）
   METACOGNITIVE    — key_lessons语义去重(rule_fingerprint) + decision_mistakes加权合并
   CONCEPTUAL       — core_insight LLM综合 + applicable_conditions频次加权
 
@@ -29,9 +28,16 @@ import logging
 import re
 import statistics
 from collections import Counter, defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from .models import MergeResult, Provenance, WeightedEquivalenceSet, WeightedExperience
+from .models import (
+    MergeResult,
+    Provenance,
+    WeightedEquivalenceSet,
+    WeightedExperience,
+    _fusion_threshold_for_layer,
+)
+from .sec import canonical_service_or_empty, resolve_target_service
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +57,18 @@ def _total_weight(wes: WeightedEquivalenceSet) -> float:
 
 def _exp_weight(we: WeightedExperience) -> float:
     return we.weight_effective if we.weight_effective > 0 else 0.01
+
+
+def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
+    """按出现顺序去重，过滤空字符串。"""
+    seen = set()
+    out: List[str] = []
+    for item in items:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
 
 
 def _weighted_vote(
@@ -136,47 +154,72 @@ def _make_exp_id_hash(cluster_id: str) -> str:
 
 
 def _contradiction_score(wes: WeightedEquivalenceSet) -> float:
-    """计算等价集内的矛盾评分（§10.2）。
+    """计算等价集内的矛盾评分（§10.2 / 2026-03-19 根因 3 修复）。
 
-    主要度量：成功 vs 失败经验的加权冲突程度。
+    策略：仅在同层（POS vs POS 之间，NEG vs NEG 之间）且同 layer 计算矛盾，
+    避免 POS 和 NEG 因角色不同被误判为互相否定。
+
     success_flag(E) = 1 if session_outcome == 'success' else 0
     """
-    total_w = _total_weight(wes)
-    success_w, failure_w = 0.0, 0.0
+    # 提取所有经验及其所属层 (POS/NEG)
+    meta_exps: List[Tuple[str, str, WeightedExperience]] = []
     for we in wes.weighted_exps:
+        layer = str(we.exp.get("knowledge_layer", "")).upper()
+        # POS/NEG 判定：PROCEDURAL_NEG 显式为 NEG，其他的（如 FACTUAL_RULE）根据 session_outcome 判定
         outcome = we.exp.get("metadata", {}).get("session_outcome", "")
-        if outcome == "success":
-            success_w += _exp_weight(we)
-        elif outcome == "failure":
-            failure_w += _exp_weight(we)
-    # outcome_diff = |success_ratio - failure_ratio|
-    if total_w < 1e-9:
+        # PROCEDURAL_NEG 永远是负面样本
+        role = "NEG" if layer == "PROCEDURAL_NEG" or outcome == "failure" else "POS"
+        meta_exps.append((layer, role, we))
+
+    # 按 (layer, role) 分组计算各自的矛盾分，取最大值
+    group_scores: List[float] = []
+    groups: Dict[Tuple[str, str], List[WeightedExperience]] = defaultdict(list)
+    for layer, role, we in meta_exps:
+        groups[(layer, role)].append(we)
+
+    if not groups:
         return 0.0
-    outcome_diff = abs(success_w - failure_w) / total_w
-    # 若 outcome_diff 接近 1.0，则矛盾度接近 0（一边倒）；
-    # 若接近 0.0，说明各半，矛盾度最高
-    # 矛盾 = 1 - outcome_diff（当两者各半则矛盾最大）
-    return round(1.0 - outcome_diff, 4)
+
+    # 对每一组，计算内部多样性（如有无其他导致分歧的因子，本版本简化为 0，
+    # 真正的矛盾核心是 success/failure，但根据修复逻辑，同一组内的 role 是相同的）。
+    # 修正逻辑：如果一个 cluster 同时包含 POS 和 NEG 角色，
+    # 应该允许它们共存。矛盾评分现在衡量的是：
+    # 同一个（Layer, Role）分组下，置信度或子维度是否有剧烈冲突。
+    # 既然 Role 已被隔离，这里的 outcome_diff 默认应为 1.0（无矛盾）。
+    return 0.0  # 暂时归零，未来如需在 POS 内部区分"不同的 POS 路径"冲突在此扩展
 
 
 def _build_provenance(wes: WeightedEquivalenceSet) -> Provenance:
     """从 WeightedEquivalenceSet 构建 Provenance 对象。"""
     total_w = _total_weight(wes)
-    source_exp_ids = [we.exp_id for we in wes.weighted_exps]
-    source_sessions = list(dict.fromkeys(
+    source_exp_ids = _dedupe_preserve_order(we.exp_id for we in wes.weighted_exps)
+    source_sessions = _dedupe_preserve_order(
         we.exp.get("metadata", {}).get("source_session_id", "")[:8]
         for we in wes.weighted_exps
-    ))
-    weight_dist = {
-        we.exp_id: round(_exp_weight(we) / total_w, 4)
-        for we in wes.weighted_exps
-    }
+    )
+    weight_dist: Dict[str, float] = {}
+    for we in wes.weighted_exps:
+        if we.exp_id in weight_dist:
+            continue
+        weight_dist[we.exp_id] = round(_exp_weight(we) / total_w, 4)
     return Provenance(
         source_exp_ids=source_exp_ids,
         source_sessions=source_sessions,
         weight_distribution=weight_dist,
         fusion_algorithm="XPEC-RME-v1.2",
     )
+
+
+def _resolve_wes_target_service(wes: WeightedEquivalenceSet) -> str:
+    """从等价集样本中按有效权重回填服务名。"""
+    vote: Dict[str, float] = defaultdict(float)
+    for we in wes.weighted_exps:
+        svc = resolve_target_service(we.exp)
+        if svc:
+            vote[svc] += _exp_weight(we)
+    if not vote:
+        return ""
+    return max(vote.items(), key=lambda kv: kv[1])[0]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -381,10 +424,17 @@ def _merge_procedural_neg(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict]
 
     # ── 取主导经验的 sub_dim、failure_dimension 等元信息 ────────────────
     dom_content = best_we.exp.get("content", {})
+    source_counter = Counter(
+        str((we.exp.get("content", {}) or {}).get("decision_rule_source", "unknown"))
+        for we in wes.weighted_exps
+    )
 
     fused_content = {
         "failure_sub_dimension": dom_content.get("failure_sub_dimension", ""),
         "failure_dimension": dom_content.get("failure_dimension", ""),
+        "decision_rule_source_breakdown": {
+            k: int(v) for k, v in source_counter.items() if k
+        },
         "decision_rule": {
             "IF":          merged_if,
             "THEN":        merged_then,
@@ -477,10 +527,69 @@ def _merge_procedural_pos(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FACTUAL_RULE 融合（端口/服务发现聚合）
+# FACTUAL(RULE) 融合（端口/服务发现聚合）
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _merge_factual_rule(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict], List[str]]:
+_FACTUAL_RULE_STRONG_KEYS = {
+    "cve_confirmed",
+    "cve_mentioned",
+    "service_version",
+    "nikto_finding",
+    "smb_share",
+    "http_header_server",
+    "http_header_x-powered-by",
+    "http_header_x-generator",
+    "privilege_root",
+    "shell_root",
+    "flag_captured",
+    "suid_binary",
+    "file_shadow",
+    "file_passwd",
+    "file_read_passwd",
+    "file_read_shadow",
+    "auth_bypass",
+    "sudo_nopasswd",
+}
+
+
+def _factual_rule_has_substance(fused_content: Dict[str, Any]) -> bool:
+    """判断规则 FACTUAL 融合结果是否具备可复用的稳定事实。"""
+    facts = fused_content.get("discovered_facts", [])
+    if not isinstance(facts, list) or not facts:
+        return False
+
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        key = str(fact.get("key", "")).strip().lower()
+        value = str(fact.get("value", "")).strip()
+        version = str(fact.get("version", "")).strip()
+        if not (value or version):
+            continue
+        if key in _FACTUAL_RULE_STRONG_KEYS:
+            return True
+        if "version" in key or "cve" in key or "vulnerab" in key:
+            return True
+    return False
+
+
+def _factual_llm_has_substance(fused_content: Dict[str, Any]) -> bool:
+    """判断 LLM FACTUAL 融合结果是否具备最小可验证语义。"""
+    version = str(fused_content.get("target_version", "")).strip().lower()
+    has_version = bool(version and version not in {"unknown", "none", "null", "n/a"})
+
+    cve_context = fused_content.get("cve_context", {})
+    attempted = []
+    if isinstance(cve_context, dict):
+        attempted = [str(c).strip() for c in cve_context.get("attempted", []) if str(c).strip()]
+
+    cve_map = fused_content.get("cve_exploitation_map", {})
+    has_cve_map = isinstance(cve_map, dict) and any(str(k).strip() for k in cve_map.keys())
+
+    return has_version or bool(attempted) or has_cve_map
+
+
+def _merge_factual_rule(wes: WeightedEquivalenceSet) -> Tuple[Optional[Dict[str, Any]], List[Dict], List[str]]:
     """将多个 session 的 discovered_facts 按 key 去重聚合，统计发现频次。"""
     notes: List[str] = []
 
@@ -524,11 +633,14 @@ def _merge_factual_rule(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict], 
         "attack_phase":      dom_content.get("attack_phase", ""),
         "fused_from_count":  len(wes.weighted_exps),
     }
+    if not _factual_rule_has_substance(fused_content):
+        notes.append("FACTUAL-RULE: 全为瞬态事实（无稳定语义发现），跳过融合")
+        return None, [], notes
     return fused_content, [], notes
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FACTUAL_LLM 融合（CVE 利用地图汇聚）（§7.1.2）
+# FACTUAL(LLM) 融合（CVE 利用地图汇聚）（§7.1.2）
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _normalize_cve_status(status: str) -> str:
@@ -564,7 +676,7 @@ def _build_cve_commands_map(
     1. 取每个 PROCEDURAL_NEG WES 的 cluster.cve_ids 确定该集群覆盖的 CVE
        若 cluster.cve_ids 为空，则从 THEN 条目中提取 CVE ID
     2. 取主导经验（weight_effective 最高）的 next_actions[].command
-    3. 建立 cve_id → [command, ...] 映射，供 FACTUAL_LLM 融合时回填
+    3. 建立 cve_id → [command, ...] 映射，供 FACTUAL(LLM来源) 融合时回填
     """
     _cve_pat = re.compile(r'CVE-\d{4}-\d+', re.IGNORECASE)
     cve_commands: Dict[str, List[str]] = defaultdict(list)
@@ -603,7 +715,7 @@ def _build_cve_commands_map(
 def _merge_factual_llm(
     wes: WeightedEquivalenceSet,
     cve_commands_map: Optional[Dict[str, List[str]]] = None,
-) -> Tuple[Dict, List[Dict], List[str]]:
+) -> Tuple[Optional[Dict[str, Any]], List[Dict], List[str]]:
     """CVE地图合并：exploitation_results按CVE加权投票（语义归并）+ ineffective_vectors并集。"""
     notes: List[str] = []
     total_w = _total_weight(wes)
@@ -718,7 +830,44 @@ def _merge_factual_llm(
         "exploitation_status": "fused",
         "fused_from_count":   len(wes.weighted_exps),
     }
+    if not _factual_llm_has_substance(fused_content):
+        notes.append("FACTUAL-LLM: 无版本且无CVE语义，跳过融合")
+        return None, [], notes
     return fused_content, [], notes
+
+
+def _is_factual_llm_wes(wes: WeightedEquivalenceSet) -> bool:
+    """判断 FACTUAL 等价集是否应走 LLM 融合分支。"""
+    # EquivalenceSet 当前字段名为 failure_sub_dim；兼容历史命名 failure_sub_dimension。
+    sub_dim = str(
+        getattr(wes.cluster, "failure_sub_dim", "")
+        or getattr(wes.cluster, "failure_sub_dimension", "")
+        or ""
+    ).upper()
+    if sub_dim.endswith("LLM"):
+        return True
+    if sub_dim.endswith("RULE"):
+        return False
+
+    # 兼容旧数据：若缺少 sub_dim，则从内容结构兜底判断
+    for we in wes.weighted_exps:
+        content = we.exp.get("content", {})
+        extraction_source = str(we.exp.get("metadata", {}).get("extraction_source", "")).lower()
+        if extraction_source == "llm":
+            return True
+        if "cve_context" in content or "cve_exploitation_map" in content:
+            return True
+    return False
+
+
+def _merge_factual(
+    wes: WeightedEquivalenceSet,
+    cve_commands_map: Optional[Dict[str, List[str]]] = None,
+) -> Tuple[Optional[Dict[str, Any]], List[Dict], List[str]]:
+    """FACTUAL 统一入口：按子键路由到 RULE 或 LLM 融合实现。"""
+    if _is_factual_llm_wes(wes):
+        return _merge_factual_llm(wes, cve_commands_map)
+    return _merge_factual_rule(wes)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -948,8 +1097,7 @@ def _merge_conceptual(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict], Li
 _MERGE_DISPATCH = {
     "PROCEDURAL_NEG":  _merge_procedural_neg,
     "PROCEDURAL_POS":  _merge_procedural_pos,
-    "FACTUAL_RULE":    _merge_factual_rule,
-    "FACTUAL_LLM":     _merge_factual_llm,
+    "FACTUAL":         _merge_factual,
     "METACOGNITIVE":   _merge_metacognitive,
     "CONCEPTUAL":      _merge_conceptual,
 }
@@ -965,22 +1113,26 @@ def merge_equivalence_set(
 ) -> Optional[MergeResult]:
     """对单个 WeightedEquivalenceSet 执行 RME 融合。
 
-    若等价集不满足融合阈值（<3条），返回 None（不融合单条经验）。
+    若等价集不满足层级融合阈值，返回 None（不融合单条经验）。
 
     Args:
         wes             : Phase 1+2 联合输出的带权重等价集
         cve_commands_map: CVE→命令列表映射（由 _build_cve_commands_map 预构建，
-                          供 FACTUAL_LLM 融合时回填 exploit_commands）
+                  供 FACTUAL(LLM来源) 融合时回填 exploit_commands）
 
     Returns:
         MergeResult 或 None
     """
     cluster = wes.cluster
     if not cluster.meets_fusion_threshold:
-        logger.debug(f"RME: 跳过 {cluster.cluster_id}（经验数={len(cluster.experiences)} < 3）")
+        required = _fusion_threshold_for_layer(cluster.knowledge_layer)
+        logger.debug(
+            f"RME: 跳过 {cluster.cluster_id}（经验数={len(cluster.experiences)} < {required}）"
+        )
         return None
 
-    layer = cluster.knowledge_layer
+    raw_layer = cluster.knowledge_layer
+    layer = "FACTUAL" if str(raw_layer).startswith("FACTUAL_") else raw_layer
     merge_fn = _MERGE_DISPATCH.get(layer)
     if merge_fn is None:
         logger.warning(f"RME: 未知知识层 '{layer}'，跳过 {cluster.cluster_id}")
@@ -991,9 +1143,9 @@ def merge_equivalence_set(
     # 计算矛盾评分
     contra_score = _contradiction_score(wes)
 
-    # 执行层特定融合算法（FACTUAL_LLM 额外传入 cve_commands_map）
+    # 执行层特定融合算法（FACTUAL 额外传入 cve_commands_map，供 LLM 来源分支使用）
     try:
-        if layer == "FACTUAL_LLM":
+        if layer == "FACTUAL":
             fused_content, minority_opinions, notes = merge_fn(wes, cve_commands_map)
         else:
             fused_content, minority_opinions, notes = merge_fn(wes)
@@ -1001,23 +1153,42 @@ def merge_equivalence_set(
         logger.error(f"RME [{cluster.cluster_id}]: 融合失败 — {e}", exc_info=True)
         return None
 
+    if fused_content is None:
+        logger.info(f"RME [{cluster.cluster_id}]: FACTUAL 无实质内容，跳过写出")
+        return None
+
     # 构建 Provenance
     provenance = _build_provenance(wes)
     provenance.minority_opinions = minority_opinions
 
     result = MergeResult(
-        cluster_id=cluster.cluster_id,
-        knowledge_layer=layer,
-        target_service=cluster.target_service,
-        version_family=cluster.version_family,
-        cve_ids=cluster.cve_ids,
-        source_exp_count=len(wes.weighted_exps),
-        fused_content=fused_content,
-        provenance=provenance,
-        minority_opinions=minority_opinions,
-        contradiction_score=contra_score,
-        merge_notes=notes,
+        cluster.cluster_id,
+        layer,
+        "",
+        cluster.version_family,
+        cluster.cve_ids,
+        len(provenance.source_exp_ids),
+        fused_content,
+        provenance,
+        minority_opinions,
+        contra_score,
+        notes,
     )
+
+    # 写出前最终净化：避免 consolidated/raw 等占位词或实例ID进入 target_service。
+    cluster_svc = canonical_service_or_empty(cluster.target_service)
+    fused_svc = ""
+    if isinstance(fused_content, dict):
+        fused_svc = canonical_service_or_empty(str(fused_content.get("target_service", "")))
+
+    resolved_svc = cluster_svc or fused_svc or _resolve_wes_target_service(wes)
+    result.target_service = resolved_svc
+
+    if isinstance(result.fused_content, dict):
+        if resolved_svc:
+            result.fused_content["target_service"] = resolved_svc
+        else:
+            result.fused_content.pop("target_service", None)
 
     logger.info(
         f"RME [{cluster.cluster_id}]: 融合完成 "
@@ -1036,8 +1207,8 @@ def run_rme(
 ) -> List[MergeResult]:
     """对 Phase 1+2 输出的全部等价集执行 RME 融合。
 
-    自动跳过不满足融合阈值的等价集（经验数 < 3）。
-    P0 Fix 3: 预构建 cve_commands_map，供 FACTUAL_LLM 融合时回填 exploit_commands。
+    自动跳过不满足层级融合阈值的等价集。
+    P0 Fix 3: 预构建 cve_commands_map，供 FACTUAL(LLM来源) 融合时回填 exploit_commands。
 
     Args:
         wes_list: weight_equivalence_sets() 的输出

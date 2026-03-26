@@ -1,6 +1,6 @@
-# Contributing to RefPenTest
+﻿# Contributing to LORE
 
-感谢你考虑为 RefPenTest 做贡献！本文档说明了参与方式、代码规范和提交流程。
+感谢你考虑为 LORE 做贡献！本文档说明了参与方式、代码规范和提交流程。
 
 ---
 
@@ -35,8 +35,8 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/your-org/RefPenTest.git
-cd RefPenTest
+git clone https://github.com/your-org/LORE.git
+cd LORE
 
 # 2. 创建虚拟环境
 python -m venv .venv
@@ -80,6 +80,7 @@ src/
 
 crawlers/            # 关键词驱动的外部信息源爬虫
 dashboard/           # Flask Web UI
+run/                 # 统一运行入口（run_full_pipeline.py / run_layer*.py）
 configs/             # 配置文件
 tests/               # 单元与集成测试
 ```
@@ -272,3 +273,4 @@ pytest tests/ --cov=src --cov-report=term-missing
 ---
 
 *感谢所有贡献者 ❤*
+

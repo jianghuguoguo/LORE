@@ -275,6 +275,126 @@ def _validate_decision_mistakes(raw: Any) -> List[Dict[str, str]]:
     return result
 
 
+def _collect_text_snippets(value: Any, max_len: int = 300) -> List[str]:
+    """递归收集文本片段并去重保序。"""
+    collected: List[str] = []
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, str):
+            text = node.strip()
+            if text:
+                collected.append(text[:max_len])
+            return
+        if isinstance(node, list):
+            for item in node:
+                _walk(item)
+            return
+        if isinstance(node, dict):
+            for item in node.values():
+                _walk(item)
+
+    _walk(value)
+    return list(dict.fromkeys(collected))
+
+
+def _normalize_metacognitive_payload(parsed: Dict[str, Any], session_id: str = "") -> Dict[str, Any]:
+    """兼容 legacy 输出格式，归一化到当前提取器所需字段。
+
+    当前线上模型常返回：
+      {
+        "meta_cognitive_insights": {...},
+        "reasoning": "..."
+      }
+    而提取器需要 decision_mistakes/key_lessons/optimal_decision_path。
+    """
+    if not isinstance(parsed, dict):
+        return {}
+
+    has_canonical = any(
+        parsed.get(k)
+        for k in ("decision_mistakes", "key_lessons", "optimal_decision_path")
+    )
+    insights = parsed.get("meta_cognitive_insights")
+    if not isinstance(insights, dict):
+        return parsed
+
+    normalized = dict(parsed)
+
+    # 1) transferable_decision_rules -> decision_mistakes
+    transferable_rules = _ensure_str_list(insights.get("transferable_decision_rules", []), max_len=240)
+    if not normalized.get("decision_mistakes") and transferable_rules:
+        normalized["decision_mistakes"] = [
+            {
+                "mistake": "决策路径未显式固化为可执行规则",
+                "consequence": "导致重复试错与策略切换滞后",
+                "rule": rule,
+            }
+            for rule in transferable_rules
+        ]
+
+    # 2) 各子模块文本 -> key_lessons
+    if not normalized.get("key_lessons"):
+        lessons: List[str] = []
+        for key in ("reconnaissance_lessons", "exploitation_lessons", "methodology_improvements"):
+            lessons.extend(_collect_text_snippets(insights.get(key), max_len=220))
+        lessons.extend(transferable_rules)
+        normalized["key_lessons"] = list(dict.fromkeys(lessons))[:8]
+
+    # 3) methodology_improvements -> optimal_decision_path
+    if not normalized.get("optimal_decision_path"):
+        opt_path: List[str] = []
+        methodology = insights.get("methodology_improvements")
+        if isinstance(methodology, dict):
+            for field in (
+                "attack_progression_rule",
+                "failure_response_handling",
+                "environment_assumption_check",
+            ):
+                value = methodology.get(field)
+                if isinstance(value, str) and value.strip():
+                    opt_path.append(value.strip()[:240])
+        if not opt_path:
+            opt_path = _ensure_str_list(normalized.get("key_lessons", []), max_len=240)[:4]
+        normalized["optimal_decision_path"] = opt_path[:10]
+
+    # 4) 推导 failure_pattern/success_factor/rag_effectiveness
+    recon = insights.get("reconnaissance_lessons") if isinstance(insights.get("reconnaissance_lessons"), dict) else {}
+    exploit = insights.get("exploitation_lessons") if isinstance(insights.get("exploitation_lessons"), dict) else {}
+
+    if not normalized.get("failure_pattern"):
+        fp = (
+            exploit.get("persistent_failure_pattern")
+            or exploit.get("defense_evasion_trigger")
+            or ""
+        )
+        if isinstance(fp, str) and fp.strip():
+            normalized["failure_pattern"] = fp.strip()[:200]
+
+    if not normalized.get("success_factor"):
+        sf_candidates = [
+            recon.get("version_identification_success"),
+            exploit.get("partial_success_analysis"),
+        ]
+        for sf in sf_candidates:
+            if isinstance(sf, str) and sf.strip():
+                normalized["success_factor"] = sf.strip()[:200]
+                break
+
+    if not normalized.get("rag_effectiveness"):
+        reasoning = parsed.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            normalized["rag_effectiveness"] = reasoning.strip()[:300]
+
+    if session_id and not has_canonical:
+        logger.info(
+            "[metacognitive] session=%s 使用 legacy payload 归一化，top_keys=%s",
+            session_id[:8],
+            sorted(parsed.keys()),
+        )
+
+    return normalized
+
+
 def extract_metacognitive_experience(
     ann_seq: AnnotatedTurnSequence,
     client: LLMClient,
@@ -313,6 +433,7 @@ def extract_metacognitive_experience(
     parsed = _call_metacognitive_llm(summary, client, session_id, is_success=is_success_session)
     if not parsed:
         return None
+    parsed = _normalize_metacognitive_payload(parsed, session_id=session_id)
 
     # ── 提取核心字段（R-05 标准格式）─────────────────────────────────────────
     decision_mistakes = _validate_decision_mistakes(parsed.get("decision_mistakes", []))

@@ -1,4 +1,4 @@
-"""
+﻿"""
 discovery/discovery_scheduler.py — 来源发现调度器
 ====================================================
 整合三个发现通道，实现持续的账号来源自动扩充。
@@ -13,7 +13,7 @@ discovery/discovery_scheduler.py — 来源发现调度器
   ● score 25-39 → 写入 review_queue.jsonl 等待人工审核
   ● score < 25  → 丢弃
 
-依赖：discovery/* + quality/account_scorer.py
+依赖：discovery/* + src/utils/quality/account_scorer.py
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from typing import List, Optional
 
 # ── sys.path：供 discovery.* 和 crawlers.wechat_crawler.* 导入 ───────────────
 _WC = Path(__file__).parent.parent   # crawlers/wechat_crawler/
-_RT = _WC.parent.parent              # RefPenTest/
+_RT = _WC.parent.parent              # LORE/
 for _p in (str(_RT), str(_WC)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -66,7 +66,7 @@ class DiscoveryScheduler:
     @staticmethod
     def _init_scorer():
         try:
-            from quality.account_scorer import AccountQualityScorer
+            from src.utils.quality.account_scorer import AccountQualityScorer
             return AccountQualityScorer()
         except ImportError:
             log.warning('[Scheduler] AccountQualityScorer 未找到，发现结果将跳过评分直接加入')
@@ -359,3 +359,4 @@ class DiscoveryScheduler:
                 c.auto_add = True
                 qualified.append(c)
         return qualified
+

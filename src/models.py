@@ -1,5 +1,5 @@
-"""
-RefPenTest Layer 0 核心数据模型
+﻿"""
+LORE Layer 0 核心数据模型
 ===================================
 严格按照技术方案"六、完整项目实现路线图 / Layer 0：日志标准化层"
 和"阶段 0：环境准备与基础数据结构"设计。
@@ -473,3 +473,4 @@ class SessionOutcome:
     failed_goals: List[str] = field(default_factory=list)
     reasoning: str = ""
     key_signals: List[str] = field(default_factory=list)  # 实际解析到的强募成功信号（uid=0/root@/flag{）
+

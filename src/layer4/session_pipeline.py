@@ -186,6 +186,7 @@ def on_session_complete(
         reflux_result = flush_reflux_ready_to_ragflow(
             klm_backend=backend,
             ragflow_client=cfg.ragflow_client,
+            llm_client=cfg.llm_client,
             dry_run=cfg.dry_run,
             commit=not cfg.dry_run,
         )

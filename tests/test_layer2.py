@@ -19,6 +19,7 @@ from src.models import (
     FailureRootCauseDimension,
     ResultDescriptor,
     SessionMetadata,
+    SessionOutcome,
 )
 from src.layer2.experience_models import KnowledgeLayer
 from src.layer2.extractors.factual import (
@@ -26,19 +27,26 @@ from src.layer2.extractors.factual import (
     _parse_http_findings,
     extract_factual_experiences,
 )
+from src.layer2.extractors.factual_llm import (
+    canonicalize_service_name,
+    extract_factual_experience_llm,
+)
 from src.layer2.extractors.procedural import (
     _summarize_code,
     _PROTO_PRECOND_PATTERNS,
     extract_procedural_experiences,
 )
+import src.layer2.extractors.procedural as procedural_extractor
 from src.layer2.extractors.metacognitive import (
     _sample_events,
     _build_phase_distribution,
+    _normalize_metacognitive_payload,
 )
 from src.layer2.extractors.conceptual import (
     _should_extract_conceptual,
     _select_key_events,
     _VALID_PATTERN_TYPES,
+    _normalize_conceptual_payload,
 )
 from src.layer2.utils.parameterizer import (
     extract_cve_ids,
@@ -114,7 +122,6 @@ def _make_ann_event(
         attack_phase=attack_phase,
         outcome_label=outcome_label,
         failure_root_cause=failure_root_cause,
-        rag_adoption=None,
     )
 
 
@@ -123,27 +130,26 @@ def _make_ann_seq(
     session_id: str = "test-ses-0001",
     target_raw: str = "192.168.1.100",
     outcome: str = "success",
-    bar_score: float = 0.5,
-    rag_adoption_results: Optional[List] = None,
 ) -> AnnotatedTurnSequence:
     meta = SessionMetadata(
         session_id=session_id,
         target_raw=target_raw,
         start_time=_NOW,
     )
-    so = MagicMock()
-    so.outcome_label = outcome
-    so.is_success = (outcome == "success")
-    so.achieved_goals = []
-    so.failed_goals = []
-    so.reasoning = "test reasoning"
+    so = SessionOutcome(
+        is_success=(outcome == "success"),
+        outcome_label=outcome,
+        session_goal_achieved=(outcome in {"success", "partial_success"}),
+        achieved_goals=[],
+        failed_goals=[],
+        reasoning="test reasoning",
+        key_signals=[],
+    )
 
     return AnnotatedTurnSequence(
         metadata=meta,
         annotated_events=events,
         session_outcome=so,
-        bar_score=bar_score,
-        rag_adoption_results=rag_adoption_results or [],
     )
 
 
@@ -165,6 +171,12 @@ def _make_frc(
 # ===========================================================================
 
 class TestFactualExtractor:
+
+    def test_tc_f00_canonicalize_service_name_llm_first_non_enumerative(self):
+        """TC-F00: 服务名归一应以 LLM 输出为主，仅做轻量格式清洗。"""
+        assert canonicalize_service_name("apache solr 8.11.0") == "Apache Solr"
+        assert canonicalize_service_name("  spring framework v5.3.29 ") == "Spring Framework"
+        assert canonicalize_service_name("Unknown Service") == "Unknown Service"
 
     def test_tc_f01_recon_nmap_extracts_open_port(self):
         """TC-F01: RECON nmap success -> 提取 open_port FACTUAL"""
@@ -292,6 +304,86 @@ class TestFactualExtractor:
         exps = extract_factual_experiences(seq)
         assert not exps, "EXPLOITATION failure 不应提取 FACTUAL"
 
+    def test_tc_f11_recon_uncertain_with_structured_signal_extracted(self):
+        """RECON uncertain 在存在结构化证据时应进入 FACTUAL（低置信度）。"""
+        ev = _make_ann_event(
+            tool_name="nmap_scan",
+            command="nmap -sV -p 8080 192.168.1.100",
+            stdout="8080/tcp open http-proxy",
+            attack_phase="RECON_WEAPONIZATION",
+            outcome_label="uncertain",
+        )
+        seq = _make_ann_seq([ev])
+        exps = extract_factual_experiences(seq)
+        assert exps, "RECON uncertain + 结构化证据应提取 FACTUAL"
+        assert exps[0].confidence <= 0.62
+
+    def test_tc_f12_http_status_404_500_extracted(self):
+        """HTTP 404/500 状态码应被纳入 FACTUAL 结构化证据。"""
+        output = "GET /admin -> HTTP/1.1 404 Not Found\nPOST /api -> HTTP/1.1 500 Internal Server Error"
+        findings = _parse_http_findings(output, "curl -i")
+        statuses = {f["value"] for f in findings if f["key"] == "http_status"}
+        assert "404" in statuses
+        assert "500" in statuses
+
+    def test_tc_f13_factual_llm_backfills_attempted_and_results(self):
+        """当 LLM 未给出 attempted/results 时，factual_llm 应从事件兜底补全 cve_context。"""
+        ev = _make_ann_event(
+            tool_name="generic_linux_command",
+            command="python exploit.py --cve CVE-2021-44228",
+            stdout="CVE-2021-44228 check result: not vulnerable",
+            attack_phase="EXPLOITATION",
+            outcome_label="failure",
+        )
+        seq = _make_ann_seq([ev], outcome="failure")
+
+        client = MagicMock()
+        client.chat.return_value = """
+{
+  "target_service": "Apache Tomcat",
+  "target_version": "9.0.65",
+  "cve_context": {
+    "attempted": [],
+    "exploitation_results": {},
+    "unexplored": []
+  },
+  "applicable_constraints": {
+    "network_topology": "internal",
+    "service_versions": ["9.0.65"],
+    "known_ineffective_vectors": []
+  },
+  "exploitation_status": "patched"
+}
+"""
+
+        exp = extract_factual_experience_llm(seq, client, exp_counter=1)
+        assert exp is not None
+        cve_context = exp.content.get("cve_context", {})
+        assert "CVE-2021-44228" in cve_context.get("attempted", [])
+        results = cve_context.get("exploitation_results", {})
+        assert results.get("CVE-2021-44228") == "patched"
+
+    def test_tc_f14_recon_transient_only_should_be_filtered(self):
+        """TC-F14: 仅含 HTTP 状态码等瞬态证据的 RECON 事件不应写入 FACTUAL。"""
+        ev = _make_ann_event(
+            tool_name="generic_http_request",
+            command="curl -i http://192.168.1.100/admin",
+            stdout="HTTP/1.1 404 Not Found\nDate: Tue, 12 Mar 2026 01:02:03 GMT",
+            attack_phase="RECON_WEAPONIZATION",
+            outcome_label="success",
+        )
+        seq = _make_ann_seq([ev])
+        exps = extract_factual_experiences(seq)
+        assert not exps, "纯瞬态证据（http_status/date）不应生成 FACTUAL 条目"
+
+    def test_tc_f15_relative_path_command_summary_should_be_kept(self):
+        """TC-F15: ./exploit.py --target 这类命令行不应被相对路径噪声规则误杀。"""
+        output = "./exploit.py --target 192.168.1.100 --check"
+        findings = _parse_generic_findings(output, "generic_linux_command")
+        summaries = [f.get("value", "") for f in findings if f.get("key") == "output_summary"]
+        assert summaries, f"期望保留 output_summary，实际 findings={findings}"
+        assert summaries[0].startswith("./exploit.py --target"), summaries[0]
+
 
 # ===========================================================================
 # TC-P: Procedural 提取器
@@ -347,7 +439,7 @@ class TestProceduralExtractor:
         assert all(e.knowledge_layer == KnowledgeLayer.PROCEDURAL_NEG for e in neg)
 
     def test_tc_p04_partial_success_pos_and_neg(self):
-        """TC-P04: partial_success + FRC -> POS 和 NEG 各自独立（seen_hashes 分开）"""
+        """TC-P04: partial_success + FRC -> 仅生成 POS（NEG 仅 failure/timeout）"""
         frc = _make_frc(
             dim=FailureRootCauseDimension.EFF,
             sub="PARTIAL_SHELL",
@@ -365,7 +457,7 @@ class TestProceduralExtractor:
         seq = _make_ann_seq([ev])
         pos, neg = extract_procedural_experiences(seq)
         assert pos, "partial_success 应生成 PROCEDURAL_POS"
-        assert neg, "partial_success + FRC 应生成 PROCEDURAL_NEG"
+        assert not neg, "partial_success 不应生成 PROCEDURAL_NEG（仅 failure/timeout）"
 
     def test_tc_p05_pos_confidence_boosted_by_root_signal(self):
         """TC-P05: uid=0(root) 信号使 POS confidence 高于 baseline 0.78"""
@@ -426,6 +518,49 @@ class TestProceduralExtractor:
         assert "5985" in lower or "winrm" in lower, "缺少 WinRM 5985 模式"
         assert "jndi" in lower or "log4" in lower, "缺少 JNDI/Log4Shell 模式"
 
+    def test_tc_p09_pos_with_cve_survives_short_command_filter(self, monkeypatch):
+        """TC-P09: 短命令+无成功信号时，若含 CVE 仍应保留为 POS。"""
+        monkeypatch.setattr(procedural_extractor, "_infer_target_service", lambda *args, **kwargs: "")
+
+        ev = _make_ann_event(
+            tool_name="generic_linux_command",
+            command="python poc.py --check CVE-2021-44228",
+            stdout="done",
+            attack_phase="EXPLOITATION",
+            outcome_label="success",
+            turn_index=0,
+        )
+        seq = _make_ann_seq([ev])
+        pos, _ = extract_procedural_experiences(seq)
+        assert pos, "含 CVE 的成功步骤不应被短命令过滤"
+
+    def test_tc_p10_neg_should_backfill_target_service_from_session_hint(self):
+        """TC-P10: NEG 在事件侧无法识别服务时，应回填 session_target_software。"""
+        frc = _make_frc(
+            dim=FailureRootCauseDimension.DEF,
+            sub="WAF_OR_PATCH",
+            evidence="403 forbidden",
+        )
+        ev = _make_ann_event(
+            tool_name="generic_linux_command",
+            command="python exploit.py --target 10.10.10.10",
+            stdout="failed",
+            attack_phase="EXPLOITATION",
+            outcome_label="failure",
+            failure_root_cause=frc,
+            turn_index=0,
+        )
+        seq = _make_ann_seq([ev])
+        _, neg = extract_procedural_experiences(
+            seq,
+            session_target_software="Apache Solr",
+        )
+        assert neg, "应提取 NEG 经验"
+        exp = neg[0]
+        assert exp.content.get("target_service") == "Apache Solr"
+        assert exp.content.get("decision_rule_source") == "rule_fallback"
+        assert exp.metadata.applicable_constraints.get("target_service") == "Apache Solr"
+
 
 # ===========================================================================
 # TC-T: Parameterizer 工具
@@ -466,25 +601,18 @@ class TestParameterizerUtils:
 
 class TestConceptualExtractor:
 
-    def _rag_result(self, level: int):
-        r = MagicMock()
-        r.adoption_level = level
-        r.query = "test"
-        r.reasoning = "test"
-        return r
-
     def test_tc_c01_low_adoption_does_not_trigger(self):
-        """TC-C01: adoption_level<2 不满足 RAG 触发条件"""
+        """TC-C01: 未达到 exploit_success/failure 阈值时不触发 CONCEPTUAL。"""
         ev = _make_ann_event(attack_phase="EXPLOITATION", outcome_label="success")
-        rag_results = [self._rag_result(0), self._rag_result(1)]
-        seq = _make_ann_seq([ev], rag_adoption_results=rag_results)
-        # exploit_success=1 < 2，failure_count=0，has_useful_rag=False -> False
+        seq = _make_ann_seq([ev])
+        # exploit_success=1 < 2，failure_count=0 -> False
         assert not _should_extract_conceptual(seq)
 
     def test_tc_c01b_adoption_level_2_triggers(self):
-        """TC-C01b: adoption_level>=2 满足触发条件"""
-        ev = _make_ann_event(attack_phase="EXPLOITATION", outcome_label="success")
-        seq = _make_ann_seq([ev], rag_adoption_results=[self._rag_result(2)])
+        """TC-C01b: >=2 个 EXPLOITATION/ESCALATION 成功事件触发条件。"""
+        ev1 = _make_ann_event(attack_phase="EXPLOITATION", outcome_label="success", turn_index=0)
+        ev2 = _make_ann_event(attack_phase="ESCALATION", outcome_label="success", turn_index=1)
+        seq = _make_ann_seq([ev1, ev2])
         assert _should_extract_conceptual(seq)
 
     def test_tc_c02_pattern_type_vocabulary(self):
@@ -532,6 +660,26 @@ class TestConceptualExtractor:
         selected = _select_key_events(seq)
         phases = {e.attack_phase for e in selected}
         assert "EXPLOITATION" in phases
+
+    def test_tc_c05_normalize_legacy_payload(self):
+        """TC-C05: legacy conceptual_patterns 返回应能归一化为标准字段。"""
+        raw = {
+            "conceptual_patterns": [
+                {
+                    "pattern_name": "Iterative Defense Evasion",
+                    "description": "攻击者在遇到防御后持续更换向量进行绕过。",
+                    "evidence": "连续 DEF/WAF_OR_PATCH 错误。",
+                    "reasoning": "防御机制稳定存在，需迭代规避。",
+                }
+            ],
+            "reasoning": "来自多次失败事件的归纳",
+        }
+        normalized = _normalize_conceptual_payload(raw, session_id="test-ses")
+        assert normalized.get("core_insight"), "应生成 core_insight"
+        assert normalized.get("pattern_type") in _VALID_PATTERN_TYPES
+        ac = normalized.get("applicable_conditions", {})
+        assert isinstance(ac, dict)
+        assert ac.get("positive"), "应生成 positive 条件"
 
 
 # ===========================================================================
@@ -589,6 +737,29 @@ class TestMetacognitiveExtractor:
         if not is_success and not parsed.get("failure_pattern"):
             parsed["failure_pattern"] = "(auto-filled: session outcome = failure)"
         assert parsed["failure_pattern"] != ""
+
+    def test_tc_m04_normalize_legacy_payload(self):
+        """TC-M04: legacy meta_cognitive_insights 返回应能归一化为标准字段。"""
+        raw = {
+            "meta_cognitive_insights": {
+                "reconnaissance_lessons": {
+                    "version_identification_success": "先识别版本再利用",
+                },
+                "methodology_improvements": {
+                    "attack_progression_rule": "先侦察后利用",
+                    "failure_response_handling": "连续失败后切换路径",
+                },
+                "transferable_decision_rules": [
+                    "规则1：连续防御拦截后切换攻击面",
+                    "规则2：先验证成功信号再升级动作",
+                ],
+            },
+            "reasoning": "基于失败与部分成功信号总结",
+        }
+        normalized = _normalize_metacognitive_payload(raw, session_id="test-ses")
+        assert normalized.get("decision_mistakes"), "应生成 decision_mistakes"
+        assert normalized.get("key_lessons"), "应生成 key_lessons"
+        assert normalized.get("optimal_decision_path"), "应生成 optimal_decision_path"
 
 
 # ===========================================================================
@@ -706,3 +877,31 @@ class TestLayer2Pipeline:
         assert bundle.by_layer(KnowledgeLayer.FACTUAL), "RECON success 应产出 FACTUAL"
         assert bundle.by_layer(KnowledgeLayer.PROCEDURAL_POS), \
             "EXPLOITATION success 应产出 PROCEDURAL_POS"
+
+    def test_tc_i05_sync_cve_ids_into_metadata_constraints(self):
+        """TC-I05: 含 cve_ids 的经验应同步写入 metadata.applicable_constraints.cve_ids。"""
+        ev = _make_ann_event(
+            tool_name="generic_linux_command",
+            command="python exploit.py --target 10.0.0.1 --cve CVE-2021-44228",
+            stdout="uid=0(root)",
+            attack_phase="EXPLOITATION",
+            outcome_label="success",
+            turn_index=0,
+        )
+        seq = _make_ann_seq([ev])
+        bundle = run_layer2(seq, client=None)
+
+        checked = 0
+        for exp in bundle.experiences:
+            content_cves = [str(c).upper() for c in (exp.content.get("cve_ids") or []) if str(c).strip()]
+            if not content_cves:
+                continue
+            meta_cves = [
+                str(c).upper()
+                for c in (exp.metadata.applicable_constraints or {}).get("cve_ids", [])
+                if str(c).strip()
+            ]
+            assert set(content_cves).issubset(set(meta_cves))
+            checked += 1
+
+        assert checked > 0, "测试前置失败：至少应有一条带 content.cve_ids 的经验"

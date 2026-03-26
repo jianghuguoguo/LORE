@@ -1,4 +1,4 @@
-"""
+﻿"""
 crawlers/rss_crawler.py — 通用 RSS/Atom Feed 增量爬虫
 ======================================================
 支持 FreeBuf、安全客、绿盟科技、嘶吼、Seebug Paper 等安全社区 RSS 订阅。
@@ -32,7 +32,7 @@ from crawlers.base_crawler import BaseCrawler
 
 log = logging.getLogger(__name__)
 
-# 状态文件路径（RefPenTest/data/rss_state.json）
+# 状态文件路径（LORE/data/rss_state.json）
 _ROOT = Path(__file__).parent.parent
 _STATE_FILE = _ROOT / "data" / "rss_state.json"
 _OUTPUT_BASE = _ROOT / "raw_data"
@@ -239,8 +239,8 @@ class RSSCrawler(BaseCrawler):
             # feedparser 支持直接传 URL；设置 User-Agent 避免部分站点 403
             headers = {
                 "User-Agent": (
-                    "Mozilla/5.0 (compatible; RefPenTest-RSSBot/1.0; "
-                    "+https://github.com/your/refpentest)"
+                    "Mozilla/5.0 (compatible; LORE-RSSBot/1.0; "
+                    "+https://github.com/your/lore)"
                 )
             }
             resp = self.safe_request(self.feed_url, timeout=_TIMEOUT, headers=headers)
@@ -460,3 +460,4 @@ if __name__ == "__main__":
 
     agg = RSSAggregator(feeds_to_use)
     agg.fetch_all(query=args.query, save=not args.no_save, skip_state=args.skip_state)
+

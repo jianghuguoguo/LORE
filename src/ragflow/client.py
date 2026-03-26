@@ -24,50 +24,39 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from ..utils.config_loader import get_config
+
 logger = logging.getLogger(__name__)
 
+_API_PREFIX = "/api/v1"
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 默认配置（与 ragflow_uploader.py 保持一致）
+# 默认配置（统一读取 configs/config.yaml）
 # ─────────────────────────────────────────────────────────────────────────────
-RAGFLOW_CONFIG: Dict[str, str] = {
-    "base_url":           "http://8.140.33.83",
-    "email":              "123456@mail.com",
-    "password":           "123456",
-    "api_key":            "",                                    # 推荐：填入 Web UI 生成的 API Key
-    "experience_dataset": "b5f3a66f065f11f1bca40242ac120006",   # 经验知识库
-}
-
-# RAGFlow 默认 RSA 公钥（与 ragflow_uploader.py 同源）
-_DEFAULT_PUBKEY = (
-    "-----BEGIN PUBLIC KEY-----\n"
-    "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/"
-    "z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp"
-    "2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOO"
-    "UEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKR"
-    "NLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6o"
-    "lN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2w"
-    "IDAQAB"
-    "\n-----END PUBLIC KEY-----"
-)
+RAGFLOW_CONFIG: Dict[str, str] = get_config().ragflow_config
 
 
-def _rsa_encrypt(password: str) -> Optional[str]:
-    """RSA PKCS1_v1_5 加密密码，返回 base64 字符串；失败返回 None。"""
-    try:
-        try:
-            from Cryptodome.PublicKey import RSA
-            from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1
-        except ImportError:
-            from Crypto.PublicKey import RSA              # type: ignore
-            from Crypto.Cipher import PKCS1_v1_5 as Cipher_pkcs1  # type: ignore
-        import base64
-        rsa_key = RSA.import_key(_DEFAULT_PUBKEY)
-        cipher = Cipher_pkcs1.new(rsa_key)
-        encrypted = cipher.encrypt(base64.b64encode(password.encode()))
-        return base64.b64encode(encrypted).decode()
-    except Exception as exc:
-        logger.debug("RSA 加密失败: %s", exc)
-        return None
+def _normalize_base_url(raw_base_url: str) -> str:
+    """标准化 RAGFlow 基础地址，兼容是否包含 /api/v1。"""
+    base = (raw_base_url or "").strip().rstrip("/")
+    if not base:
+        raise RuntimeError("[RAGFlowExpClient] base_url 为空，请检查 RAGFlow 配置。")
+
+    if base.endswith(_API_PREFIX):
+        base = base[: -len(_API_PREFIX)].rstrip("/")
+
+    return base
+
+
+def _build_api_url(base_url: str, path: str) -> str:
+    """拼接 API 地址，避免重复 /api/v1 或双斜杠。"""
+    normalized_base = _normalize_base_url(base_url)
+    normalized_path = "/" + (path or "").lstrip("/")
+
+    if normalized_path == _API_PREFIX or normalized_path.startswith(f"{_API_PREFIX}/"):
+        return f"{normalized_base}{normalized_path}"
+
+    return f"{normalized_base}{_API_PREFIX}{normalized_path}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -90,68 +79,63 @@ class RAGFlowExpClient:
         self,
         cfg: Optional[Dict[str, str]] = None,
         dataset_id: Optional[str] = None,
-        timeout: int = 60,
-        retry_times: int = 2,
+        timeout: Optional[int] = None,
+        retry_times: Optional[int] = None,
     ) -> None:
-        self.cfg = cfg or RAGFLOW_CONFIG
+        self.cfg = dict(RAGFLOW_CONFIG)
+        if cfg:
+            self.cfg.update(cfg)
+
+        env_base_url = os.environ.get("RAGFLOW_BASE_URL", "").strip()
+        if env_base_url:
+            self.cfg["base_url"] = env_base_url
+
+        self._base_url = _normalize_base_url(self.cfg.get("base_url", ""))
         self.dataset_id = dataset_id or self.cfg.get("experience_dataset", "")
-        self.timeout = timeout
-        self.retry_times = retry_times
+        cfg_timeout = int(str(self.cfg.get("request_timeout", "60") or "60"))
+        cfg_retry_times = int(str(self.cfg.get("retry_times", "2") or "2"))
+        self.timeout = int(timeout) if timeout is not None else cfg_timeout
+        self.retry_times = int(retry_times) if retry_times is not None else cfg_retry_times
         self._token: Optional[str] = None
-        self._auth_is_api_key: bool = False  # True=api_key(Bearer前缀), False=JWT(无前缀)
         self._proxies: Dict[str, str] = {}   # 始终绕过系统代理
 
     # ── 鉴权 ─────────────────────────────────────────────────────────────────
 
     def _get_token(self) -> str:
-        """获取 Bearer token（进程内缓存；优先使用 api_key）。"""
+        """获取 API Key（优先使用环境变量）。"""
         if self._token:
             return self._token
 
-        # 优先：环境变量 或 cfg api_key
+        # 优先使用环境变量或配置中的 api_key
         api_key = (os.environ.get("RAGFLOW_API_KEY", "").strip()
                    or self.cfg.get("api_key", "").strip())
-        if api_key:
-            self._token = api_key
-            self._auth_is_api_key = True
-            logger.info("[RAGFlowExpClient] 使用 api_key 鉴权")
-            return self._token
-
-        # 备选：email/password 登录
-        enc_pwd = _rsa_encrypt(self.cfg.get("password", ""))
-        if enc_pwd is None:
+        if not api_key:
             raise RuntimeError(
-                "[RAGFlowExpClient] 无法鉴权：RSA 加密失败，"
-                "请在 RAGFLOW_CONFIG['api_key'] 或 RAGFLOW_API_KEY 环境变量中配置 API Key。"
+                "[RAGFlowExpClient] 无法鉴权：未配置 API Key。"
+                "请设置 RAGFLOW_API_KEY 环境变量或在 configs/config.yaml 的 ragflow.api_key_literal 中填入。"
             )
-        url = f"{self.cfg['base_url']}/v1/user/login"
-        resp = requests.post(
-            url,
-            json={"email": self.cfg["email"], "password": enc_pwd},
-            timeout=15,
-            proxies=self._proxies,
-        )
-        data = resp.json() if resp.content else {}
-        if data.get("code") == 0:
-            # RAGFlow 旧版：Bearer token 在响应 header Authorization 中
-            auth = resp.headers.get("Authorization", "")
-            token = auth if auth else (
-                data.get("data", {}).get("access_token")
-                or data.get("data", {}).get("token", "")
-            )
-            if not token:
-                raise RuntimeError(f"登录返回无 token: {data}")
-            self._token = token
-            self._auth_is_api_key = False  # JWT，无需 Bearer 前缀
-            logger.info("[RAGFlowExpClient] email/password 登录成功")
-            return self._token
-        raise RuntimeError(f"登录失败 code={data.get('code')} msg={data.get('message')}")
+
+        self._token = api_key
+        logger.info("[RAGFlowExpClient] 使用 API Key 鉴权")
+        return self._token
 
     def _headers(self) -> Dict[str, str]:
         token = self._get_token()
-        if self._auth_is_api_key:
-            return {"Authorization": f"Bearer {token}"}
-        return {"Authorization": token}  # JWT 直接使用，无需 Bearer 前缀
+        # RAGFlow API Key 规范：必须带 Bearer 前缀
+        return {"Authorization": f"Bearer {token}"}
+
+    @property
+    def base_url(self) -> str:
+        """返回标准化后的 RAGFlow 主机地址（不含 /api/v1）。"""
+        return self._base_url
+
+    def _api_url(self, path: str) -> str:
+        """构建 RAGFlow API 地址。"""
+        return _build_api_url(self._base_url, path)
+
+    def api_url(self, path: str) -> str:
+        """对外暴露 URL 构建，便于测试脚本复用同一链接规则。"""
+        return self._api_url(path)
 
     # ── 核心操作 ─────────────────────────────────────────────────────────────
 
@@ -161,6 +145,7 @@ class RAGFlowExpClient:
         title: str,
         content_text: str,
         custom_meta: Optional[Dict[str, Any]] = None,
+        dataset_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         上传单条经验文本到 RAGFlow 经验知识库。
@@ -171,15 +156,17 @@ class RAGFlowExpClient:
         title        : 文档标题（将成为 doc.name）
         content_text : 纯文本内容（已由 format_exp_for_rag 格式化）
         custom_meta  : 额外元数据（当前 RAGFlow 暂不支持自定义 chunk meta，预留）
+        dataset_id   : 可选覆盖上传目标 dataset（默认 self.dataset_id）
 
         Returns
         -------
         str  : ragflow_doc_id（形如 "abc123..."），失败返回 None
         """
-        url = f"{self.cfg['base_url']}/v1/document/upload"
+        url = self._api_url("/document/upload")
         filename = f"xpec_{exp_id}.txt"
         payload = content_text.encode("utf-8")
-        form_data = {"kb_id": self.dataset_id, "parser_id": "naive"}
+        target_dataset = dataset_id or self.dataset_id
+        form_data = {"kb_id": target_dataset, "parser_id": "naive"}
 
         for attempt in range(self.retry_times + 1):
             try:
@@ -198,17 +185,22 @@ class RAGFlowExpClient:
                         data[0].get("id") if isinstance(data, list) and data
                         else data.get("id") if isinstance(data, dict) else None
                     )
-                    logger.info("[upload_exp] OK  exp_id=%s  doc_id=%s", exp_id, doc_id)
+                    logger.info(
+                        "[upload_exp] OK exp_id=%s dataset=%s doc_id=%s",
+                        exp_id,
+                        target_dataset,
+                        doc_id,
+                    )
                     return doc_id
                 logger.warning(
-                    "[upload_exp] FAIL attempt=%d/%d exp_id=%s HTTP=%d body=%s",
+                    "[upload_exp] FAIL attempt=%d/%d exp_id=%s dataset=%s HTTP=%d body=%s",
                     attempt + 1, self.retry_times + 1, exp_id,
-                    resp.status_code, str(body)[:200],
+                    target_dataset, resp.status_code, str(body)[:200],
                 )
             except Exception as exc:
                 logger.warning(
-                    "[upload_exp] ERROR attempt=%d/%d exp_id=%s err=%s",
-                    attempt + 1, self.retry_times + 1, exp_id, exc,
+                    "[upload_exp] ERROR attempt=%d/%d exp_id=%s dataset=%s err=%s",
+                    attempt + 1, self.retry_times + 1, exp_id, target_dataset, exc,
                 )
             if attempt < self.retry_times:
                 time.sleep(2 ** attempt)  # 指数退避
@@ -222,7 +214,7 @@ class RAGFlowExpClient:
         当经验被标记为 conflicted 时，若之前已写入 RAGFlow，调用此方法删除。
         Returns True on success.
         """
-        url = f"{self.cfg['base_url']}/v1/document"
+        url = self._api_url("/document")
         payload = {"doc_ids": [doc_id]}
         try:
             resp = requests.delete(
@@ -244,10 +236,37 @@ class RAGFlowExpClient:
             logger.error("[delete_document] ERROR doc_id=%s err=%s", doc_id, exc)
         return False
 
+    def list_datasets(self) -> List[Dict[str, Any]]:
+        """列出可访问的数据集列表。"""
+        url = self._api_url("/datasets")
+        try:
+            resp = requests.get(
+                url,
+                headers=self._headers(),
+                timeout=30,
+                proxies=self._proxies,
+            )
+            body = resp.json() if resp.content else {}
+            if body.get("code") != 0:
+                return []
+
+            data = body.get("data")
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                for key in ("datasets", "items", "docs"):
+                    value = data.get(key)
+                    if isinstance(value, list):
+                        return value
+            return []
+        except Exception as exc:
+            logger.error("[list_datasets] ERROR %s", exc)
+            return []
+
     def list_documents(self, dataset_id: Optional[str] = None, page_size: int = 100) -> List[Dict]:
         """列出知识库中的文档（用于对账）。"""
         did = dataset_id or self.dataset_id
-        url = f"{self.cfg['base_url']}/v1/document/list"
+        url = self._api_url("/document/list")
         try:
             resp = requests.get(
                 url,
@@ -274,9 +293,10 @@ class RAGFlowExpClient:
         语义搜索经验知识库（用于 Agent 查询；冲突检测不走此路径）。
         """
         did = dataset_id or self.dataset_id
-        url = f"{self.cfg['base_url']}/v1/retrieval"
+        url = self._api_url("/retrieval")
         payload = {
             "question": query,
+            "dataset_ids": [did],
             "datasets": [did],
             "top_k": top_k,
         }

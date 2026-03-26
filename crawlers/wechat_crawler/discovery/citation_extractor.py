@@ -1,4 +1,4 @@
-"""
+﻿"""
 discovery/citation_extractor.py — 通道 B：文章内部引用挖掘
 ============================================================
 从已爬取的文章内容中提取引用的公众号名称，实现"以爬养爬"的图谱扩散策略。
@@ -29,7 +29,7 @@ from typing import Dict, List, Set
 
 # ── sys.path：供 discovery.* 和 crawlers.wechat_crawler.* 导入 ───────────────
 _WC = Path(__file__).parent.parent   # crawlers/wechat_crawler/
-_RT = _WC.parent.parent              # RefPenTest/
+_RT = _WC.parent.parent              # LORE/
 for _p in (str(_RT), str(_WC)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 from discovery.models import AccountCandidate
 
 # ── 路径常量（相对于项目根，调用方可覆盖）────────────────────────────────────
-_HERE        = _RT                               # RefPenTest/
+_HERE        = _RT                               # LORE/
 _WECHAT_DIR  = _HERE / 'raw_data' / 'wechat'
 _DISC_DIR    = _HERE / 'raw_data' / 'discovery'
 _SEED_FILE   = _WC / 'seed_accounts.yaml'
@@ -369,3 +369,4 @@ if __name__ == '__main__':
         output=args.output,
         threshold=args.threshold,
     )
+

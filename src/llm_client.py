@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -111,6 +112,7 @@ class LLMClient:
     def __init__(self, config: LLMConfig) -> None:
         self._cfg = config
         self._client = self._build_client()
+        self._fatal_error: Optional[str] = None
 
     # ── 内部：构建 openai 客户端 ──────────────────────────────────────────────
 
@@ -170,6 +172,13 @@ class LLMClient:
         Returns:
             LLMCallResult，success=False 时 parsed 为 None，error 含错误描述
         """
+        if self._fatal_error:
+            return LLMCallResult(
+                success=False,
+                error=self._fatal_error,
+                model=self._cfg.model,
+            )
+
         if system:
             messages = [{"role": "system", "content": system}] + list(messages)
 
@@ -217,6 +226,10 @@ class LLMClient:
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
                 logger.warning("[llm] API error attempt=%d: %s", attempt, exc)
+                if _is_fatal_llm_error(last_error):
+                    self._fatal_error = last_error
+                    logger.error("[llm] fatal error detected; disable further calls in this run: %s", exc)
+                    break
 
         latency = time.monotonic() - t0
         return LLMCallResult(
@@ -261,6 +274,9 @@ class LLMClient:
         """
         import time as _time
 
+        if self._fatal_error:
+            raise RuntimeError(f"LLM 调用失败: {self._fatal_error}")
+
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -292,6 +308,10 @@ class LLMClient:
             except Exception as exc:
                 last_error = str(exc)
                 logger.warning("[llm] chat() error attempt=%d: %s", attempt, exc)
+                if _is_fatal_llm_error(last_error):
+                    self._fatal_error = last_error
+                    logger.error("[llm] fatal error detected; disable further calls in this run: %s", exc)
+                    break
 
         raise RuntimeError(f"LLM 调用失败: {last_error}")
 
@@ -318,7 +338,7 @@ def build_llm_client_from_config() -> LLMClient:
           timeout: 60
     """
     from .utils.config_loader import get_config
-    cfg_dict = get_config()._cfg.get("llm", {})
+    cfg_dict = get_config().llm_config
 
     llm_cfg = LLMConfig(
         provider=cfg_dict.get("provider", "deepseek"),
@@ -355,3 +375,40 @@ def _parse_json(text: Optional[str]) -> Optional[Dict[str, Any]]:
         return json.loads(text)
     except json.JSONDecodeError:
         return None
+
+
+def _is_fatal_llm_error(msg: str) -> bool:
+    """识别不可重试错误（鉴权/计费/配额硬失败）。"""
+    s = (msg or "").lower()
+    hard_tokens = (
+        "insufficient balance",
+        "payment required",
+        "invalid api key",
+        "invalid_request_error",
+        "unauthorized",
+        "forbidden",
+        "quota exceeded",
+        "no api key",
+    )
+    if any(token in s for token in hard_tokens):
+        return True
+    if re.search(r"\berror code:\s*(401|402|403)\b", s):
+        return True
+    return False
+
+
+def llm_preflight_check(client: LLMClient) -> tuple[bool, str]:
+    """执行最小化连通性预检，确认 LLM 可实际返回可解析 JSON。"""
+    probe = client.chat_json(
+        [{"role": "user", "content": "请只返回 JSON：{\"ok\": true}"}],
+        system="You are a JSON-only service. Respond with exactly one JSON object.",
+        temperature=0.0,
+        max_tokens=32,
+    )
+    if not probe.success:
+        return False, probe.error or "unknown llm error"
+    if not isinstance(probe.parsed, dict):
+        return False, "llm preflight parsed payload is not an object"
+    if probe.parsed.get("ok") is not True:
+        return False, f"llm preflight unexpected payload: {probe.parsed}"
+    return True, ""

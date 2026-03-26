@@ -1,5 +1,5 @@
-"""
-RefPenTest 序列化工具
+﻿"""
+LORE 序列化工具
 =====================
 提供 TurnSequence / AtomicEvent 等数据类与 JSON/JSONL 格式之间的
 序列化与反序列化功能，保证跨阶段（Layer 0 → Layer 1）数据传递的一致性。
@@ -38,7 +38,7 @@ T = TypeVar("T")
 # JSON 编码器
 # ─────────────────────────────────────────────────────────────────────────────
 
-class RefPenTestEncoder(json.JSONEncoder):
+class LOREEncoder(json.JSONEncoder):
     """支持 datetime、Enum、dataclass 的 JSON 编码器"""
 
     def default(self, obj: Any) -> Any:
@@ -236,3 +236,4 @@ def load_turn_sequence(input_path: Path) -> TurnSequence:
             raise ValueError(f"Empty file: {input_path}")
         data = json.loads(content)
     return deserialize_turn_sequence(data)
+

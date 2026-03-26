@@ -1,4 +1,4 @@
-"""
+﻿"""
 scheduler.py — 微信爬虫调度器（APScheduler + SQLite）
 =======================================================
 替代原 Celery + Redis 方案，实现零外来服务依赖：
@@ -35,15 +35,15 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
-# ── sys.path：RefPenTest/ → crawlers.wechat_crawler.*；wechat_crawler/ → discovery.* ──
+# ── sys.path：LORE/ → crawlers.wechat_crawler.*；wechat_crawler/ → discovery.* ──
 import sys as _sys
 _WC   = Path(__file__).parent                        # crawlers/wechat_crawler/
-_REFR = _WC.parent.parent                            # RefPenTest/
+_REFR = _WC.parent.parent                            # LORE/
 for _p in (str(_REFR), str(_WC)):
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
 _ROOT  = Path(__file__).parent                       # crawlers/wechat_crawler/
-_REFROOT = _ROOT.parent.parent                       # RefPenTest/
+_REFROOT = _ROOT.parent.parent                       # LORE/
 _DB    = _REFROOT / 'data' / 'crawl_state.db'
 # interceptor.py 写入此文件通知冷却，scheduler 读取后清除（同目录）
 _COOLDOWN_FLAG = _ROOT / 'cooldown.flag'
@@ -430,7 +430,7 @@ if __name__ == '__main__':
         datefmt='%H:%M:%S',
     )
 
-    parser = argparse.ArgumentParser(description='RefPenTest 微信爬虫调度器')
+    parser = argparse.ArgumentParser(description='LORE 微信爬虫调度器')
     sub = parser.add_subparsers(dest='cmd')
 
     # crawl 子命令
@@ -481,3 +481,4 @@ if __name__ == '__main__':
 
     else:
         parser.print_help()
+

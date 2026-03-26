@@ -147,33 +147,27 @@ class GenericJsonlAdapter(LogAdapter):
     ) -> Tuple[SessionMeta, Iterator[CanonicalAgentTurn]]:
         self.validate_file(file_path)
 
-        # 读取所有行（内存允许的情况下）
-        records: List[Dict[str, Any]] = []
-        with open(file_path, encoding="utf-8") as fh:
-            for lineno, raw in enumerate(fh, start=1):
-                stripped = raw.strip()
-                if not stripped:
-                    continue
-                try:
-                    obj = json.loads(stripped)
-                    if isinstance(obj, dict):
-                        records.append(obj)
-                    else:
-                        logger.debug(
-                            "[GenericJsonlAdapter] 行 %d 非对象类型，跳过", lineno
-                        )
-                except json.JSONDecodeError as exc:
-                    logger.warning(
-                        "[GenericJsonlAdapter] 行 %d JSON 解析失败: %s", lineno, exc
-                    )
+        first_record: Optional[Dict[str, Any]] = None
+        last_record: Optional[Dict[str, Any]] = None
+        valid_count = 0
+        for rec in self._iter_records(file_path):
+            if first_record is None:
+                first_record = rec
+            last_record = rec
+            valid_count += 1
 
-        if not records:
+        if first_record is None or last_record is None:
             meta = SessionMeta.from_unknown(file_path.stem)
             return meta, iter([])
 
-        meta = self._extract_session_meta(records, file_path.stem)
+        meta = self._extract_session_meta(
+            first_record=first_record,
+            last_record=last_record,
+            fallback_id=file_path.stem,
+            total_turns=valid_count,
+        )
         turn_iter = self._iter_canonical(
-            records, meta.session_id, self._field_map,
+            file_path, meta.session_id, self._field_map,
             self._rag_tool_names, self._skip_no_tool,
         )
         return meta, turn_iter
@@ -182,7 +176,7 @@ class GenericJsonlAdapter(LogAdapter):
 
     @staticmethod
     def _iter_canonical(
-        records: List[Dict[str, Any]],
+        file_path: Path,
         session_id: str,
         field_map: Dict[str, _FieldCandidates],
         rag_names: Set[str],
@@ -190,7 +184,7 @@ class GenericJsonlAdapter(LogAdapter):
     ) -> Iterator[CanonicalAgentTurn]:
         auto_turn_idx = 0
 
-        for rec in records:
+        for rec in GenericJsonlAdapter._iter_records(file_path):
             get = _FieldResolver(rec, field_map)
 
             # ── tool_name ─────────────────────────────────────────────────
@@ -284,15 +278,38 @@ class GenericJsonlAdapter(LogAdapter):
             )
             auto_turn_idx += 1
 
+    @staticmethod
+    def _iter_records(file_path: Path) -> Iterator[Dict[str, Any]]:
+        """流式读取 JSONL 记录，跳过非对象与坏行。"""
+        with open(file_path, encoding="utf-8") as fh:
+            for lineno, raw in enumerate(fh, start=1):
+                stripped = raw.strip()
+                if not stripped:
+                    continue
+                try:
+                    obj = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    logger.warning(
+                        "[GenericJsonlAdapter] 行 %d JSON 解析失败: %s", lineno, exc
+                    )
+                    continue
+
+                if isinstance(obj, dict):
+                    yield obj
+                else:
+                    logger.debug("[GenericJsonlAdapter] 行 %d 非对象类型，跳过", lineno)
+
     # ─── 内部：会话元数据提取 ────────────────────────────────────────────────
 
     def _extract_session_meta(
         self,
-        records: List[Dict[str, Any]],
+        first_record: Dict[str, Any],
+        last_record: Dict[str, Any],
         fallback_id: str,
+        total_turns: int,
     ) -> SessionMeta:
-        get_first = _FieldResolver(records[0], self._field_map)
-        get_last  = _FieldResolver(records[-1], self._field_map)
+        get_first = _FieldResolver(first_record, self._field_map)
+        get_last  = _FieldResolver(last_record, self._field_map)
 
         session_id = get_first.str("session_id") or fallback_id
         start_time = get_first.str("timestamp") or ""
@@ -303,7 +320,7 @@ class GenericJsonlAdapter(LogAdapter):
             start_time=start_time,
             end_time=end_time,
             session_end_type="unknown",
-            total_turns=len(records),
+            total_turns=total_turns,
         )
 
 

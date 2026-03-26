@@ -33,19 +33,17 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from src.layer1.llm_annotator import (
+    _fallback_failure_root_cause,
+    _judge_outcome,
     _needs_failure_cause_llm,
     _run_attack_phase,
     _run_failure_cause,
-    annotate_with_llm,
     run_layer1_llm,
 )
 from src.llm_client import LLMCallResult, LLMClient, LLMConfig, _parse_json
@@ -54,12 +52,9 @@ from src.models import (
     AnnotatedEvent,
     AnnotatedTurnSequence,
     AtomicEvent,
-    AttackPhase,
     CallDescriptor,
     FailureRootCause,
     FailureRootCauseDimension,
-    RagAdoptionResult,
-    RagQueryRecord,
     ResultDescriptor,
     SessionMetadata,
     SessionOutcome,
@@ -68,7 +63,6 @@ from src.models import (
 from src.prompts import (
     build_attack_phase_prompt,
     build_failure_cause_prompt,
-    build_rag_adoption_prompt,
     build_session_outcome_prompt,
 )
 
@@ -337,6 +331,52 @@ class TestNeedsFailureCauseLLM:
         assert _needs_failure_cause_llm(ae) is False
 
 
+class TestDeterministicFailureSignals:
+    """扩展后的失败 token 与 fallback 根因映射。"""
+
+    def test_judge_outcome_status_500_as_failure(self):
+        ae = _make_annotated(return_code=None, success=None)
+        assert ae.base.result is not None
+        ae.base.result.stdout_raw = "HTTP/1.1 500 Internal Server Error"
+        assert _judge_outcome(ae) == "failure"
+
+    def test_judge_outcome_plain_error_keyword_as_failure(self):
+        ae = _make_annotated(return_code=None, success=None)
+        assert ae.base.result is not None
+        ae.base.result.stdout_raw = "Errors occurred while validating payload"
+        assert _judge_outcome(ae) == "failure"
+
+    def test_fallback_root_cause_404_target_not_found(self):
+        ae = _make_annotated(return_code=None, success=None)
+        assert ae.base.result is not None
+        ae.base.result.stdout_raw = "request failed with Status Code: 404"
+        frc = _fallback_failure_root_cause(ae)
+        assert frc is not None
+        assert frc.dimension == FailureRootCauseDimension.INT
+        assert frc.sub_dimension == "TARGET_NOT_FOUND"
+        assert frc.source == "rule_fallback"
+
+    def test_fallback_root_cause_command_not_found_binary_missing(self):
+        ae = _make_annotated(return_code=None, success=None)
+        assert ae.base.result is not None
+        ae.base.result.stderr_raw = "sqlmap: command not found"
+        frc = _fallback_failure_root_cause(ae)
+        assert frc is not None
+        assert frc.dimension == FailureRootCauseDimension.ENV
+        assert frc.sub_dimension == "BINARY_MISSING"
+        assert frc.source == "rule_fallback"
+
+    def test_fallback_root_cause_traceback_execution_error(self):
+        ae = _make_annotated(return_code=None, success=None)
+        assert ae.base.result is not None
+        ae.base.result.stderr_raw = "Traceback (most recent call last): ValueError"
+        frc = _fallback_failure_root_cause(ae)
+        assert frc is not None
+        assert frc.dimension == FailureRootCauseDimension.INV
+        assert frc.sub_dimension == "EXECUTION_ERROR"
+        assert frc.source == "rule_fallback"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TC-LLM-05 ~ 07：_run_attack_phase
 # ─────────────────────────────────────────────────────────────────────────────
@@ -410,14 +450,15 @@ class TestRunFailureCause:
         assert ae.failure_root_cause.sub_dimension == "DEPENDENCY_MISSING"
 
     def test_llm_error_leaves_root_cause_none(self):
-        """TC-LLM-09：LLM 报错 → failure_root_cause=None，llm_error 被追加"""
+        """TC-LLM-09：LLM 报错 → 触发 rule_fallback failure_root_cause，llm_error 被追加"""
         client = _make_llm_client(error="API unavailable")
         ae = _make_annotated(return_code=2, success=False)
         ae.llm_error = "attack_phase: prior_error"
         call_count, error_count = _run_failure_cause(ae, client, None)
         assert call_count == 1
         assert error_count == 1
-        assert ae.failure_root_cause is None
+        assert ae.failure_root_cause is not None
+        assert ae.failure_root_cause.source == "rule_fallback"
         assert "failure_cause" in ae.llm_error
         assert "prior_error" in ae.llm_error  # 追加而非覆盖
 
@@ -443,7 +484,7 @@ class TestRunLayer1LLM:
     """TC-LLM-13 ~ 16"""
 
     def _build_responses(self) -> MagicMock:
-        """构建一个依次返回 attack_phase → rag_adoption → session_outcome 的 mock client"""
+        """构建一个依次返回 attack_phase → session_outcome 的 mock client"""
         client = MagicMock(spec=LLMClient)
 
         call_idx = [0]
@@ -499,8 +540,8 @@ class TestRunLayer1LLM:
         assert result.session_outcome.is_success is True
         assert result.session_outcome.outcome_label == "success"
 
-    def test_bar_score_zero_when_no_rag(self):
-        """TC-LLM-14：无 RAG 查询时 bar_score=0.0"""
+    def test_session_outcome_key_signals_empty_without_strong_signal(self):
+        """TC-LLM-14：无强成功信号时 session_outcome.key_signals 为空"""
         client = self._build_responses()
         event = _make_atomic(return_code=0, success=True)
         seq = _make_seq(events=[event], rag_index={})
@@ -508,7 +549,8 @@ class TestRunLayer1LLM:
             AnnotatedEvent(base=event, needs_llm=True),
         ])
         result = run_layer1_llm(ann_seq, seq, client)
-        assert result.bar_score == 0.0
+        assert result.session_outcome is not None
+        assert result.session_outcome.key_signals == []
 
     def test_all_llm_errors_error_count_matches_call_count(self):
         """TC-LLM-16：全部 LLM 失败时 llm_error_count == llm_call_count"""
@@ -570,20 +612,6 @@ class TestPromptBuilders:
         # has_result=False 时应包含说明性文字
         assert "无结果" in prompt or "None" in prompt or "未执行" in prompt
 
-    def test_rag_adoption_prompt_includes_behavior_window(self):
-        """TC-LLM-19：behavior_window 正确嵌入 prompt"""
-        bw = [
-            {"tool_name": "nmap", "call_args": {"cmd": "nmap"}, "result_summary": "open ports", "attack_phase": "RECON"},
-        ]
-        prompt = build_rag_adoption_prompt(
-            rag_query="how to exploit vsftpd",
-            rag_result_summary="vsftpd 2.3.4 backdoor CVE-2011-2523",
-            behavior_window=bw,
-            target_info="10.0.0.3",
-        )
-        assert "nmap" in prompt
-        assert "vsftpd" in prompt
-
     def test_session_outcome_prompt_truncates_events(self):
         """TC-LLM-20：超 30 条事件时 prompt 只保留最后 30 条"""
         events_summary = [
@@ -596,7 +624,6 @@ class TestPromptBuilders:
             total_events=50,
             events_summary=events_summary,
             deterministic_hits=2,
-            rag_adoption_summary=None,
         )
         # 只有 tool_20 ~ tool_49 出现（最后 30 条）
         assert "tool_20" in prompt or "tool_49" in prompt
@@ -621,19 +648,7 @@ class TestLoadAnnotatedTurnSequence:
             attack_phase="RECON",
             outcome_label="success",
             attack_phase_reasoning="port scanning",
-            rag_adoption={"adoption_level": 3, "adoption_label": "direct", "adoption_weight": 1.0, "reasoning": "used command from RAG"},
-            rag_adoption_reasoning="used command from RAG",
             llm_error=None,
-        )
-        rar = RagAdoptionResult(
-            rag_tool_call_id="rag_001",
-            query="exploit vsftpd",
-            rag_turn_index=1,
-            adoption_level=3,
-            adoption_label="direct",
-            adoption_weight=1.0,
-            reasoning="ran exact command",
-            behavior_window=["sess01_0_0"],
         )
         so = SessionOutcome(
             is_success=True,
@@ -641,8 +656,8 @@ class TestLoadAnnotatedTurnSequence:
             session_goal_achieved=True,
             achieved_goals=["RCE"],
             failed_goals=[],
-            bar_score=1.0,
             reasoning="got shell",
+            key_signals=["uid=0"],
         )
         ann_seq = AnnotatedTurnSequence(
             metadata=_make_metadata(),
@@ -650,9 +665,7 @@ class TestLoadAnnotatedTurnSequence:
             deterministic_hits=0,
             llm_pending=0,
             llm_pending_failure_cause=0,
-            rag_adoption_results=[rar],
             session_outcome=so,
-            bar_score=1.0,
             llm_processed=True,
             llm_call_count=4,
             llm_error_count=0,
@@ -666,18 +679,14 @@ class TestLoadAnnotatedTurnSequence:
         assert loaded.llm_processed is True
         assert loaded.llm_call_count == 4
         assert loaded.llm_error_count == 0
-        assert loaded.bar_score == 1.0
         assert loaded.session_outcome is not None
         assert loaded.session_outcome.is_success is True
         assert loaded.session_outcome.achieved_goals == ["RCE"]
-        assert len(loaded.rag_adoption_results) == 1
-        assert loaded.rag_adoption_results[0].adoption_label == "direct"
-        assert loaded.rag_adoption_results[0].adoption_weight == 1.0
+        assert loaded.session_outcome.key_signals == ["uid=0"]
         # AnnotatedEvent Phase 3 字段
         ae = loaded.annotated_events[0]
         assert ae.attack_phase == "RECON"
-        assert ae.rag_adoption == {"adoption_level": 3, "adoption_label": "direct", "adoption_weight": 1.0, "reasoning": "used command from RAG"}
-        assert ae.rag_adoption_reasoning == "used command from RAG"
+        assert ae.attack_phase_reasoning == "port scanning"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

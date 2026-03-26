@@ -1,4 +1,4 @@
-"""
+﻿"""
 discovery/community_sync.py — 通道 C：社区交叉验证（高可信度来源）
 ============================================================
 从 GitHub awesome-security 类项目和安全社区资源列表中自动提取公众号推荐。
@@ -33,7 +33,7 @@ from typing import Dict, List, Optional, Set
 
 # ── sys.path：供 discovery.* 和 crawlers.wechat_crawler.* 导入 ───────────────
 _WC = Path(__file__).parent.parent   # crawlers/wechat_crawler/
-_RT = _WC.parent.parent              # RefPenTest/
+_RT = _WC.parent.parent              # LORE/
 for _p in (str(_RT), str(_WC)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -46,7 +46,7 @@ import requests
 from discovery.models import AccountCandidate
 
 # ── 路径常量 ─────────────────────────────────────────────────────────────────
-_HERE       = _RT                               # RefPenTest/
+_HERE       = _RT                               # LORE/
 _DISC_DIR   = _HERE / 'raw_data' / 'discovery'
 _SEED_FILE  = _WC / 'seed_accounts.yaml'
 _C_OUTPUT   = _DISC_DIR / 'channel_c_candidates.json'
@@ -486,3 +486,4 @@ if __name__ == '__main__':
         output=args.output,
         use_llm=not args.no_llm,
     )
+

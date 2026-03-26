@@ -1,4 +1,4 @@
-"""
+﻿"""
 run_discovery.py — 三通道账号发现统一入口
 ==========================================
 整合通道 B（文章引用挖掘）和通道 C（GitHub 社区同步），
@@ -41,7 +41,7 @@ from typing import List, Set
 
 # ── 路径 ─────────────────────────────────────────────────────────────────────
 _HERE      = Path(__file__).parent                    # crawlers/wechat_crawler/
-_ROOT      = _HERE.parent.parent                      # RefPenTest/
+_ROOT      = _HERE.parent.parent                      # LORE/
 _DISC_DIR  = _ROOT / 'raw_data' / 'discovery'
 _SEED_FILE = _HERE / 'seed_accounts.yaml'
 _MERGED    = _DISC_DIR / 'merged_candidates.json'
@@ -262,3 +262,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+

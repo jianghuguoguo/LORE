@@ -1,6 +1,6 @@
-# Log Adapter — 多框架日志接入指南
+﻿# Log Adapter — 多框架日志接入指南
 
-RefPenTest 支持将 **CAI、LangChain、OpenAI Assistants API** 以及任意自定义 JSONL 格式的 Agent 运行日志直接接入分析流水线，无需修改日志生成代码。
+LORE 支持将 **CAI、LangChain、OpenAI Assistants API** 以及任意自定义 JSONL 格式的 Agent 运行日志直接接入分析流水线，无需修改日志生成代码。
 
 ---
 
@@ -27,7 +27,7 @@ RefPenTest 支持将 **CAI、LangChain、OpenAI Assistants API** 以及任意自
 - 有自定义的 Agent 日志（每行一个 JSON 对象的 JSONL 文件）
 - 希望分析 **OpenAI Assistants API** 的 Run Steps 日志
 
-那么只需按本文档配置适配器，即可将这些日志接入 RefPenTest 的五层分析流水线（Layer 0 → Layer 1 标注 → Layer 2 经验提炼 → Layer 3 融合 → Layer 4 缺口爬取）。
+那么只需按本文档配置适配器，即可将这些日志接入 LORE 的五层分析流水线（Layer 0 → Layer 1 标注 → Layer 2 经验提炼 → Layer 3 融合 → Layer 4 缺口爬取）。
 
 如果你使用的是 **CAI 框架**，系统默认支持，无需任何额外配置。
 
@@ -84,7 +84,7 @@ agent_executor = AgentExecutor(
 agent_executor.invoke({"input": "Scan 192.168.1.1"})
 ```
 
-**接入 RefPenTest：**
+**接入 LORE：**
 
 ```python
 from src.layer0 import AdapterRegistry
@@ -123,7 +123,7 @@ with open("run_steps.json", "w") as f:
     json.dump([s.model_dump() for s in steps.data], f, indent=2)
 ```
 
-**接入 RefPenTest：**
+**接入 LORE：**
 
 ```python
 from src.layer0 import AdapterRegistry
@@ -293,4 +293,5 @@ print(AdapterRegistry.list_adapters())
 
 ---
 
-*RefPenTest · Log Adapter · [src/layer0/adapters/](../src/layer0/adapters/)*
+*LORE · Log Adapter · [src/layer0/adapters/](../src/layer0/adapters/)*
+

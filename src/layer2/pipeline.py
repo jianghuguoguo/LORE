@@ -87,7 +87,7 @@ def run_layer2(
         logger.error("[layer2] %s session=%s\n%s", msg, session_id[:8], traceback.format_exc())
         bundle.extraction_errors.append(msg)
 
-    # ── Step 1.5: FACTUAL LLM（服务识别，可选）─────────────────────────────
+    # ── Step 1.5: FACTUAL（LLM 来源，服务识别，可选）───────────────────────
     if client is not None:
         try:
             llm_fact_exp = extract_factual_experience_llm(ann_seq, client=client, exp_counter=counter)
@@ -96,7 +96,7 @@ def run_layer2(
                 counter += 1
                 llm_calls += 1
                 logger.debug(
-                    "[layer2] session=%s FACTUAL_LLM extracted=1 service=%s",
+                    "[layer2] session=%s FACTUAL extracted=1 source=llm service=%s",
                     session_id[:8], llm_fact_exp.content.get("target_service", "?"),
                 )
                 # F-1: 将 LLM 识别的服务名和 CVE 列表反向注入所有规则驱动 FACTUAL 经验
@@ -124,9 +124,9 @@ def run_layer2(
                                 "cve_ids": merged_cves,
                             }
             else:
-                logger.debug("[layer2] session=%s FACTUAL_LLM skipped", session_id[:8])
+                logger.debug("[layer2] session=%s FACTUAL skipped source=llm", session_id[:8])
         except Exception as e:
-            msg = f"FACTUAL_LLM 提取失败: {e}"
+            msg = f"FACTUAL(LLM来源) 提取失败: {e}"
             logger.warning("[layer2] %s session=%s", msg, session_id[:8])
             bundle.extraction_errors.append(msg)
 
@@ -157,27 +157,39 @@ def run_layer2(
                 current_ts = proc_exp.content.get("target_service") or ""
                 if current_ts in _GENERIC_SVC:
                     proc_exp.content["target_service"] = _svc_name
-                # P0-B: 合并 CVE IDs
+                # P2: 合并 CVE IDs（content + 会话级），并同步到 applicable_constraints
                 existing_pos_cves = proc_exp.content.get("cve_ids") or []
-                if not existing_pos_cves and _svc_cves:
-                    proc_exp.content["cve_ids"] = _svc_cves
-                # 同步 applicable_constraints
-                if not proc_exp.metadata.applicable_constraints.get("target_service"):
-                    proc_exp.metadata.applicable_constraints = {
-                        "target_service": _svc_name,
-                        "target_version": _svc_version,
-                        "cve_ids": list(dict.fromkeys(existing_pos_cves + _svc_cves)),
-                    }
+                merged_pos_cves = list(dict.fromkeys(existing_pos_cves + _svc_cves))
+                if merged_pos_cves:
+                    proc_exp.content["cve_ids"] = merged_pos_cves
+
+                constraints = dict(proc_exp.metadata.applicable_constraints or {})
+                if not constraints.get("target_service"):
+                    constraints["target_service"] = _svc_name
+                if _svc_version and not constraints.get("target_version"):
+                    constraints["target_version"] = _svc_version
+                if merged_pos_cves:
+                    constraints["cve_ids"] = merged_pos_cves
+                proc_exp.metadata.applicable_constraints = constraints
+
             for proc_exp in bundle.by_layer(KnowledgeLayer.PROCEDURAL_NEG):
                 # 🔴 Fix: 同时回填 content 级 target_service（之前只填了 applicable_constraints）
                 if not proc_exp.content.get("target_service"):
                     proc_exp.content["target_service"] = _svc_name
-                if not proc_exp.metadata.applicable_constraints.get("target_service"):
-                    proc_exp.metadata.applicable_constraints = {
-                        "target_service": _svc_name,
-                        "target_version": _svc_version,
-                        "cve_ids": _svc_cves,
-                    }
+
+                existing_neg_cves = proc_exp.content.get("cve_ids") or []
+                merged_neg_cves = list(dict.fromkeys(existing_neg_cves + _svc_cves))
+                if merged_neg_cves:
+                    proc_exp.content["cve_ids"] = merged_neg_cves
+
+                constraints = dict(proc_exp.metadata.applicable_constraints or {})
+                if not constraints.get("target_service"):
+                    constraints["target_service"] = _svc_name
+                if _svc_version and not constraints.get("target_version"):
+                    constraints["target_version"] = _svc_version
+                if merged_neg_cves:
+                    constraints["cve_ids"] = merged_neg_cves
+                proc_exp.metadata.applicable_constraints = constraints
     except Exception as e:
         msg = f"PROCEDURAL 提取失败: {e}"
         logger.error("[layer2] %s session=%s\n%s", msg, session_id[:8], traceback.format_exc())
@@ -225,6 +237,39 @@ def run_layer2(
             msg = f"CONCEPTUAL 提取失败: {e}"
             logger.warning("[layer2] %s session=%s", msg, session_id[:8])
             bundle.extraction_errors.append(msg)
+
+    # ── Step 4.5: 统一同步 cve_ids 到 metadata.applicable_constraints ─────────
+    # 目的：保证 Layer3 SEC 优先读取 metadata 时不会因字段缺失导致 cve_ids 为空。
+    for exp in bundle.experiences:
+        constraints = dict(exp.metadata.applicable_constraints or {})
+
+        content_cves = []
+        raw_cves = exp.content.get("cve_ids")
+        if isinstance(raw_cves, list):
+            content_cves.extend([str(c).upper() for c in raw_cves if str(c).strip()])
+
+        if exp.knowledge_layer == KnowledgeLayer.FACTUAL:
+            cve_ctx = exp.content.get("cve_context", {})
+            attempted = cve_ctx.get("attempted", []) if isinstance(cve_ctx, dict) else []
+            content_cves.extend([str(c).upper() for c in attempted if str(c).strip()])
+
+        merged_cves = list(dict.fromkeys(
+            [str(c).upper() for c in (constraints.get("cve_ids") or []) if str(c).strip()] +
+            content_cves
+        ))
+        if merged_cves:
+            constraints["cve_ids"] = merged_cves
+
+        content_service = str(exp.content.get("target_service", "")).strip()
+        if content_service and not constraints.get("target_service"):
+            constraints["target_service"] = content_service
+
+        content_version = str(exp.content.get("target_version", "")).strip()
+        if content_version and not constraints.get("target_version"):
+            constraints["target_version"] = content_version
+
+        if constraints:
+            exp.metadata.applicable_constraints = constraints
 
     bundle.llm_call_count = llm_calls
 

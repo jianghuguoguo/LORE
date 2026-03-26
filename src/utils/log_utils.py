@@ -1,5 +1,5 @@
-"""
-RefPenTest 日志工具
+﻿"""
+LORE 日志工具
 ====================
 提供统一的结构化日志打印（通过 Python logging + structlog-like 格式）。
 避免引入重度外部依赖，使用标准库即可运行。
@@ -26,3 +26,4 @@ def get_logger(name: str) -> logging.Logger:
         logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
     return logger
+

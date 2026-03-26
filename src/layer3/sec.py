@@ -17,22 +17,27 @@ Phase 1 — Semantic Equivalence Clustering (SEC)
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from .models import EquivalenceSet
+from ..utils.service_name_normalizer import normalize_service_name as shared_normalize_service_name
+from ..utils.config_loader import get_config
 
 logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SSO 规范化映射（Security Semantic Ontology 小词典）
-# 后续可从独立 JSON 文件加载；当前内建高频项
+# 默认内建 + 可选外部配置文件（configs/sec_aliases.json）
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SERVICE_ALIASES: Dict[str, str] = {
+_DEFAULT_SERVICE_ALIASES: Dict[str, str] = {
     # Oracle WebLogic 系列
     "oracle weblogic server":        "Oracle WebLogic Server",
     "oracle weblogic":               "Oracle WebLogic Server",
@@ -56,34 +61,343 @@ _SERVICE_ALIASES: Dict[str, str] = {
     # Apache Druid
     "apache druid":                  "Apache Druid",
     "druid":                         "Apache Druid",
+    # Apache ActiveMQ
+    "apache activemq":               "Apache ActiveMQ",
+    "activemq":                      "Apache ActiveMQ",
+    # Apache Log4j
+    "apache log4j":                  "Apache Log4j",
+    "log4j":                         "Apache Log4j",
+    # Spring
+    "spring framework":              "Spring Framework",
+    "spring":                        "Spring Framework",
+    "spring boot":                   "Spring Framework",
+    # Apache Shiro
+    "apache shiro":                  "Apache Shiro",
+    "shiro":                         "Apache Shiro",
+    # Confluence
+    "atlassian confluence":          "Atlassian Confluence",
+    "confluence":                    "Atlassian Confluence",
+    # Solr
+    "apache solr":                   "Apache Solr",
+    "solr":                          "Apache Solr",
+    # Others
+    "drupal":                        "Drupal",
+    "gitlab":                        "GitLab",
+    "grafana":                       "Grafana",
+    "jenkins":                       "Jenkins",
+    "metabase":                      "Metabase",
+    # 靶场实例ID/内部编号
+    "s350209713":                    "Atlassian Confluence",
 }
 
-_CVE_ALIASES: Dict[str, str] = {
-    # WebLogic XMLDecoder 系列
-    "weblogic xmldecoder":           "CVE-2017-10271",
-    "wls-wsat xmldecoder":           "CVE-2017-10271",
-    "cve-2017-10271":                "CVE-2017-10271",
-    # 可扩展：在此添加更多别名
+# 设计约束：CVE 空间极大，默认不做内建别名枚举。
+# 统一走 CVE 正则提取 + 格式归一（CVE-YYYY-NNNN...）。
+# 如需项目私有别名，可在 configs/sec_aliases.json 的 cve_aliases 显式维护。
+_DEFAULT_CVE_ALIASES: Dict[str, str] = {}
+
+# CVE -> 服务名 兜底映射（仅用于 target_service 缺失时推断）
+_DEFAULT_CVE_SERVICE_HINTS: Dict[str, str] = {
+    "CVE-2014-4210": "Oracle WebLogic Server",
+    "CVE-2016-3088": "Apache ActiveMQ",
+    "CVE-2017-10271": "Oracle WebLogic Server",
+    "CVE-2017-12635": "CouchDB",
+    "CVE-2017-12636": "CouchDB",
+    "CVE-2017-3506": "Oracle WebLogic Server",
+    "CVE-2019-0192": "Apache Solr",
+    "CVE-2019-0193": "Apache Solr",
+    "CVE-2019-17558": "Apache Solr",
+    "CVE-2019-2725": "Oracle WebLogic Server",
+    "CVE-2020-14882": "Oracle WebLogic Server",
+    "CVE-2020-1938": "Apache Tomcat",
+    "CVE-2021-25646": "Apache Druid",
+    "CVE-2021-26084": "Atlassian Confluence",
+    "CVE-2021-27905": "Apache Solr",
+    "CVE-2021-36749": "Apache Druid",
+    "CVE-2022-26134": "Atlassian Confluence",
+    "CVE-2023-22515": "Atlassian Confluence",
+    "CVE-2023-22527": "Atlassian Confluence",
+    "CVE-2023-46604": "Apache ActiveMQ",
 }
+
+_CVE_ID_RE = re.compile(r"CVE[-_\s]?(\d{4})[-_\s]?(\d{4,7})", re.IGNORECASE)
+_RECON_PHASES_SET = {"RECON_WEAPONIZATION", "ENV_PREPARATION"}
+
+_SERVICE_PLACEHOLDER_TOKENS = frozenset(
+    {
+        "none",
+        "null",
+        "unknown",
+        "raw",
+        "validated",
+        "consolidated",
+        "consolidates",
+        "conflict",
+        "conflicted",
+        "active",
+        "archived",
+        "suspended",
+        "deleted",
+        "maturity",
+        "anysvc",
+        "service",
+        "target",
+        "http",
+        "html",
+        "trying",
+    }
+)
+
+_SERVICE_ID_TOKEN_RE = re.compile(r"^s\d{6,}$", re.IGNORECASE)
+
+_NEG_SUB_DIM_NORMALIZE_RULES: List[Tuple[re.Pattern[str], str]] = [
+    (re.compile(r"VERSION_MISMATCH|VERSION_MISJUDGMENT|ASSUMPTION_ERROR", re.IGNORECASE), "VERSION_OR_INTEL"),
+    (re.compile(r"AUTHENTICATION|AUTHORIZATION|UNAUTHORIZED|FORBIDDEN|REDIRECT", re.IGNORECASE), "AUTH_OR_PERMISSION"),
+    (re.compile(r"WAF|PATCH|DEFENSE|FILTER|VALIDATION", re.IGNORECASE), "DEFENSE_BLOCK"),
+    (re.compile(r"PARAMETER|INPUT|SYNTAX|FORMAT|ARGUMENT", re.IGNORECASE), "INPUT_OR_USAGE"),
+    (re.compile(r"TARGET_MISIDENTIFICATION|TARGET_MISJUDGMENT|PREMISE|INTEL", re.IGNORECASE), "TARGET_INTEL"),
+    (re.compile(r"TOOL_MISSING|BINARY_MISSING|DEPENDENCY|ENV_", re.IGNORECASE), "TOOLING_ENV"),
+    (re.compile(r"PARTIAL_SUCCESS_NO_EXPLOIT|NO_EXPLOIT|NO_EFFECT|INEFFECTIVE", re.IGNORECASE), "NO_EFFECT"),
+]
+
+
+def _normalize_neg_sub_dimension(raw_sub_dim: str, raw_dim: str) -> str:
+    """将高基数 NEG 子维度收敛到可聚类的稳定桶。"""
+    text = str(raw_sub_dim or "").strip().upper()
+    if not text:
+        dim = str(raw_dim or "UNKNOWN").strip().upper()
+        return dim or "UNKNOWN"
+    for pattern, normalized in _NEG_SUB_DIM_NORMALIZE_RULES:
+        if pattern.search(text):
+            return normalized
+    return text
+
+
+def _normalize_alias_mapping(raw: Any) -> Dict[str, str]:
+    """将别名字典统一为 {lower_key: CanonicalName}。"""
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, str] = {}
+    for k, v in raw.items():
+        key = str(k).strip().lower()
+        # 允许在配置中使用 null 显式标记“无效别名”，此处直接跳过。
+        if v is None:
+            continue
+        val = str(v).strip()
+        if key and val:
+            out[key] = val
+    return out
+
+
+def _normalize_cve_service_hints(raw: Any) -> Dict[str, str]:
+    """将 CVE->服务名映射归一化为 {CVE-XXXX-XXXX: CanonicalService}。"""
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, str] = {}
+    for k, v in raw.items():
+        if v is None:
+            continue
+        key = str(k).strip().upper()
+        val = str(v).strip()
+        m = _CVE_ID_RE.search(key)
+        if not m or not val:
+            continue
+        out[f"CVE-{m.group(1)}-{m.group(2)}"] = val
+    return out
+
+
+def _load_external_aliases() -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+    """从 configs/sec_aliases.json 加载别名；缺失或格式错误时降级为内建。"""
+    try:
+        cfg = get_config().sec_aliases_path
+    except Exception:
+        cfg = Path(__file__).resolve().parents[2] / "configs" / "sec_aliases.json"
+    if not cfg.exists():
+        return {}, {}, {}
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("SEC: 读取外部别名配置失败 path=%s err=%s", cfg, exc)
+        return {}, {}, {}
+
+    service_aliases = _normalize_alias_mapping(data.get("service_aliases", {}))
+    cve_aliases = _normalize_alias_mapping(data.get("cve_aliases", {}))
+    cve_service_hints = _normalize_cve_service_hints(data.get("cve_service_hints", {}))
+    logger.info(
+        "SEC: 已加载外部别名配置 service=%d cve=%d cve_service_hints=%d",
+        len(service_aliases),
+        len(cve_aliases),
+        len(cve_service_hints),
+    )
+    if cve_aliases:
+        logger.warning("SEC: 检测到项目自定义 cve_aliases=%d（仅建议用于局部数据集）", len(cve_aliases))
+    return service_aliases, cve_aliases, cve_service_hints
+
+
+_EXT_SERVICE_ALIASES, _EXT_CVE_ALIASES, _EXT_CVE_SERVICE_HINTS = _load_external_aliases()
+_SERVICE_ALIASES: Dict[str, str] = {**_DEFAULT_SERVICE_ALIASES, **_EXT_SERVICE_ALIASES}
+_CVE_ALIASES: Dict[str, str] = {**_DEFAULT_CVE_ALIASES, **_EXT_CVE_ALIASES}
+_CVE_SERVICE_HINTS: Dict[str, str] = {**_DEFAULT_CVE_SERVICE_HINTS, **_EXT_CVE_SERVICE_HINTS}
+_CANONICAL_SERVICE_NAMES = set(_SERVICE_ALIASES.values())
 
 
 def normalize_service_name(raw: str) -> str:
-    """将服务名规范化为 SSO 标准名称（不区分大小写查找）。"""
+    """将服务名规范化为 SEC 规范名（共享核心逻辑 + SEC 别名映射）。"""
+    return shared_normalize_service_name(raw, aliases=_SERVICE_ALIASES)
+
+
+def _compact_service_token(raw: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(raw or "").strip().lower())
+
+
+def _is_placeholder_service(raw: str) -> bool:
+    token = _compact_service_token(raw)
+    if not token:
+        return True
+    if token in _SERVICE_PLACEHOLDER_TOKENS:
+        return True
+    if token.startswith("consolidat") or token.startswith("validat"):
+        return True
+    if token.startswith("expconsolidated"):
+        return True
+    if _SERVICE_ID_TOKEN_RE.match(token):
+        # 仅数字ID默认视为无效服务名；若在 alias 中有配置，会在 canonical_service_or_empty 前置映射掉。
+        return token not in _SERVICE_ALIASES
+    return False
+
+
+def canonical_service_or_empty(raw: str) -> str:
+    """服务名规范化并过滤占位词，无法确认时返回空字符串。"""
     if not raw:
         return ""
-    key = raw.strip().lower()
-    return _SERVICE_ALIASES.get(key, raw.strip())
+    raw_s = str(raw).strip()
+    if _is_placeholder_service(raw_s):
+        return ""
+    normalized = normalize_service_name(raw_s)
+    if _is_placeholder_service(normalized):
+        return ""
+    return normalized
+
+
+def _infer_service_from_cves(cve_ids: List[str]) -> str:
+    hints: Counter = Counter()
+    for cve in cve_ids:
+        key = str(cve).upper()
+        svc = _CVE_SERVICE_HINTS.get(key, "")
+        canonical = canonical_service_or_empty(svc)
+        if canonical:
+            hints[canonical] += 1
+    if not hints:
+        return ""
+    return hints.most_common(1)[0][0]
+
+
+def _infer_service_from_text(exp: Dict[str, Any]) -> str:
+    """从文本上下文（content/target_raw/tags）中推断服务名。"""
+    text_chunks: List[str] = []
+    content = exp.get("content", {})
+    metadata = exp.get("metadata", {})
+    if content:
+        try:
+            text_chunks.append(json.dumps(content, ensure_ascii=False, sort_keys=True))
+        except Exception:
+            text_chunks.append(str(content))
+    target_raw = metadata.get("target_raw", "")
+    if target_raw:
+        text_chunks.append(str(target_raw))
+    tags = metadata.get("tags", [])
+    if isinstance(tags, list) and tags:
+        text_chunks.append(" ".join(str(t) for t in tags))
+
+    if not text_chunks:
+        return ""
+
+    text = "\n".join(text_chunks).lower()
+    score: Counter = Counter()
+    for alias, canonical in _SERVICE_ALIASES.items():
+        if not alias:
+            continue
+        canonical_svc = canonical_service_or_empty(canonical)
+        if not canonical_svc:
+            continue
+        # 用非字母数字边界避免误匹配（例如 'solr' 命中 'consolr'）。
+        pattern = rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])"
+        if re.search(pattern, text):
+            score[canonical_svc] += max(1, len(alias))
+
+    if not score:
+        return ""
+    return score.most_common(1)[0][0]
+
+
+def resolve_target_service(exp: Dict[str, Any]) -> str:
+    """为单条经验解析可用的 target_service（优先约束字段，失败再文本/CVE兜底）。"""
+    meta_constraints = exp.get("metadata", {}).get("applicable_constraints", {})
+    content = exp.get("content", {})
+
+    # 1) 显式字段优先
+    candidates = [
+        meta_constraints.get("target_service", ""),
+        content.get("target_service", ""),
+    ]
+    for cand in candidates:
+        canonical = canonical_service_or_empty(str(cand))
+        if canonical:
+            return canonical
+
+    # 2) 从文本上下文提取
+    inferred_from_text = _infer_service_from_text(exp)
+    if inferred_from_text:
+        return inferred_from_text
+
+    # 3) 通过 CVE 推断服务
+    inferred_from_cve = _infer_service_from_cves(_extract_cve_ids(exp))
+    if inferred_from_cve:
+        return inferred_from_cve
+
+    return ""
+
+
+def _extract_cve_tokens(raw: str) -> List[str]:
+    """从任意 token 中提取或映射到标准 CVE ID。"""
+    token = str(raw).strip()
+    if not token:
+        return []
+
+    matched = [f"CVE-{year}-{num}" for year, num in _CVE_ID_RE.findall(token)]
+    if matched:
+        return matched
+
+    key = token.lower()
+    alias = _CVE_ALIASES.get(key)
+    if not alias:
+        compact = re.sub(r"[^a-z0-9]+", "", key)
+        alias = _CVE_ALIASES.get(compact)
+    if not alias:
+        return []
+
+    alias_match = _CVE_ID_RE.search(alias)
+    if alias_match:
+        return [f"CVE-{alias_match.group(1)}-{alias_match.group(2)}"]
+    return [alias.upper()]
 
 
 def normalize_cve_ids(cve_list: List[str]) -> List[str]:
-    """规范化 CVE ID 列表（转大写、去重、排序）。"""
-    normalized = []
+    """规范化 CVE 列表（正则提取 + 统一格式；可选项目私有别名）。"""
+    normalized: List[str] = []
+    seen: set = set()
     for cve in cve_list:
-        c = cve.strip().upper()
-        # 尝试别名映射
-        c = _CVE_ALIASES.get(c.lower(), c)
-        if c and c not in normalized:
-            normalized.append(c)
+        for token in _extract_cve_tokens(str(cve)):
+            canonical = token.upper()
+            # 尝试别名映射（兼容 token 本身就是别名的场景）
+            mapped = _CVE_ALIASES.get(canonical.lower())
+            if mapped:
+                canonical = mapped.upper()
+            m = _CVE_ID_RE.search(canonical)
+            if m:
+                canonical = f"CVE-{m.group(1)}-{m.group(2)}"
+            if canonical and canonical not in seen:
+                seen.add(canonical)
+                normalized.append(canonical)
     return sorted(normalized)
 
 
@@ -119,41 +433,48 @@ def _extract_l1_key(exp: Dict[str, Any]) -> Tuple[str, str, str]:
       PROCEDURAL_NEG 的 content.target_service 为空字符串，
       正确读取位置是 metadata.applicable_constraints.target_service。
     """
-    knowledge_layer = exp.get("knowledge_layer", "")
+    raw_layer = exp.get("knowledge_layer", "")
+    # 兼容历史数据：旧数据中 FACTUAL_* 统一映射回 FACTUAL。
+    knowledge_layer = "FACTUAL" if str(raw_layer).startswith("FACTUAL_") else raw_layer
 
-    # ── BUG-1 修复：FACTUAL 子类型区分 ────────────────────────────────────────
-    # FACTUAL_RULE：端口/服务发现（discovered_facts 结构）
-    # FACTUAL_LLM ：CVE 利用地图（cve_context 结构，由 LLM 提取）
-    # 两者 schema 完全不同，Phase 3 RME 需要走不同的融合算法，必须拆开。
+    # FACTUAL 仍保持单一 knowledge_layer，通过 sub_dim 子键区分 rule/llm 来源，
+    # 既保证命名统一，也避免两种 schema 在同一等价集内被误融合。
+    factual_source = ""
     if knowledge_layer == "FACTUAL":
-        extraction_source = exp.get("metadata", {}).get("extraction_source", "")
-        has_cve_context   = "cve_context" in exp.get("content", {})
-        if extraction_source == "llm" or has_cve_context:
-            knowledge_layer = "FACTUAL_LLM"   # CVE 地图融合
-        else:
-            knowledge_layer = "FACTUAL_RULE"  # 端口/服务发现聚合
-    # ─────────────────────────────────────────────────────────────────────────
+        extraction_source = str(exp.get("metadata", {}).get("extraction_source", "")).lower()
+        content = exp.get("content", {})
+        has_cve_context = "cve_context" in content or "cve_exploitation_map" in content
+        factual_source = "LLM" if (extraction_source == "llm" or has_cve_context) else "RULE"
 
-    # target_service：优先从 metadata.applicable_constraints 读取
-    meta_constraints = exp.get("metadata", {}).get("applicable_constraints", {})
-    svc = meta_constraints.get("target_service", "")
-    if not svc:
-        # 兜底：部分 FACTUAL 层在 content 顶级也有 target_service
-        svc = exp.get("content", {}).get("target_service", "")
-    svc_normalized = normalize_service_name(svc)
+    svc_normalized = resolve_target_service(exp)
 
-    # failure_sub_dim：仅 PROCEDURAL_NEG 层有效，其他层为空字符串
-    sub_dim = ""
+    # 问题 2 优化：若当前 svc 规范化后为空（anysvc），
+    # 但该等价集内其他证据或 CVE 关联了明确服务（通过 L2 CVE 交叉聚类），
+    # 这里的 L1 key 虽然还是空，但我们可以尝试从 metadata.applicable_constraints.cve_ids 
+    # 结合项目的 service_aliases 猜测一个隐含服务，防止完全丢失上下文。
+    if not svc_normalized:
+        cves = _extract_cve_ids(exp)
+        if cves:
+            svc_normalized = _infer_service_from_cves(cves)
+
+    # failure_sub_dim：仅 PROCEDURAL_NEG 层有效。
+    # FACTUAL 层用子键携带来源类型，避免 rule/llm schema 混淆。
+    sub_dim = f"FACTUAL::{factual_source}" if knowledge_layer == "FACTUAL" else ""
     if knowledge_layer == "PROCEDURAL_NEG":
-        fsub = exp.get("content", {}).get("failure_sub_dimension", "")
-        # Issue 5 修复：加入 attack_phase 作为第二分量，防止不同攻击阶段的失败模式
-        # 被错误融合（如 RECON阶段端口探测404 vs EXPLOITATION阶段文件读取失败）。
+        content = exp.get("content", {})
+        fsub = (
+            content.get("failure_sub_dimension", "")
+            or content.get("failure_sub_dim", "")
+        )
+        fdim = content.get("failure_dimension", "")
+        fsub = _normalize_neg_sub_dimension(str(fsub), str(fdim))
         attack_phase = (
             exp.get("metadata", {}).get("attack_phase", "")
-            or exp.get("content", {}).get("attack_phase", "")
-        )
-        phase_slug = attack_phase.upper()[:20] if attack_phase else "any"
-        sub_dim = f"{fsub}::{phase_slug}" if fsub else phase_slug
+            or content.get("attack_phase", "")
+        ).upper()
+        phase_tier = "RECON" if attack_phase in _RECON_PHASES_SET else "ACTION"
+        # 仅在 sub_dim 非空时携带阶段粗分桶，减少过度碎片化。
+        sub_dim = f"{fsub}::{phase_tier}" if fsub else ""
 
     # Issue 2 修复：CONCEPTUAL 层 metadata.applicable_constraints = {} 导致 svc="" 全部落入同一 key。
     # 改为从 content.applicable_conditions.retrieval_triggers 提取服务名，
@@ -164,11 +485,9 @@ def _extract_l1_key(exp: Dict[str, Any]) -> Tuple[str, str, str]:
         if not svc_normalized:
             rt = c.get("applicable_conditions", {}).get("retrieval_triggers", [])
             for trigger in rt:
-                # 直接查字典：只有 trigger 命中别名表才采用规范化服务名，
-                # 避免未知字符串（nmap/gobuster 等工具名）被误当服务名。
-                key = trigger.strip().lower()
-                if key in _SERVICE_ALIASES:
-                    svc_normalized = _SERVICE_ALIASES[key]
+                normalized = canonical_service_or_empty(str(trigger))
+                if normalized and normalized in _CANONICAL_SERVICE_NAMES:
+                    svc_normalized = normalized
                     break
 
     return (knowledge_layer, svc_normalized, sub_dim)
@@ -188,7 +507,7 @@ def _extract_cve_ids(exp: Dict[str, Any]) -> List[str]:
         content = exp.get("content", {})
         cves = content.get("cve_ids", [])
         if not cves:
-            # cve_context.attempted（FACTUAL_LLM 层）
+            # cve_context.attempted（FACTUAL 的 LLM 来源记录）
             ctx = content.get("cve_context", {})
             cves = ctx.get("attempted", [])
         if not cves:
@@ -196,6 +515,22 @@ def _extract_cve_ids(exp: Dict[str, Any]) -> List[str]:
             ac = content.get("applicable_conditions") or {}
             rt = ac.get("retrieval_triggers", []) if isinstance(ac, dict) else []
             cves = [t for t in rt if re.match(r"CVE-\d{4}-\d+", t, re.IGNORECASE)]
+        if not cves:
+            # 全量兜底：从 content 文本中扫描 CVE（覆盖 PROCEDURAL_NEG 的 decision_rule/evidence 等字段）
+            raw_blob = ""
+            try:
+                raw_blob = json.dumps(content, ensure_ascii=False, sort_keys=True)
+            except Exception:
+                raw_blob = str(content)
+            cves = re.findall(r"CVE-\d{4}-\d{4,7}", raw_blob, flags=re.IGNORECASE)
+    if not cves:
+        # 最终兜底：从整个经验对象里提取（兼容历史异构字段）
+        raw_blob = ""
+        try:
+            raw_blob = json.dumps(exp, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            raw_blob = str(exp)
+        cves = re.findall(r"CVE-\d{4}-\d{4,7}", raw_blob, flags=re.IGNORECASE)
     return normalize_cve_ids(cves)
 
 
@@ -215,14 +550,35 @@ def _make_cluster_id(
     version_family: str,
     cve_ids: List[str],
 ) -> str:
-    """生成等价集唯一 ID。"""
-    # slug 化：小写 + 空格转下划线 + 截断
-    svc_slug = re.sub(r"[^a-z0-9]+", "_", target_service.lower())[:20].strip("_")
-    sub_slug = sub_dim.lower()[:20] if sub_dim else "any"
-    ver_slug = version_family.replace(".", "") if version_family else "anyver"
-    # CVE 签名（取首 CVE 或 "nocve"）
-    cve_sig = cve_ids[0].replace("-", "") if cve_ids else "nocve"
-    return f"SEC_{knowledge_layer}_{svc_slug}_{sub_slug}_{ver_slug}_{cve_sig}"
+    """生成等价集唯一 ID。
+
+    采用「可读前缀 + 稳定哈希后缀」避免截断引起的碰撞。
+    """
+
+    def _slug(text: str, max_len: int, fallback: str) -> str:
+        s = re.sub(r"[^a-z0-9]+", "_", (text or "").lower()).strip("_")
+        return s[:max_len] if s else fallback
+
+    layer_slug = _slug(knowledge_layer, 20, "unknown")
+    svc_slug = _slug(target_service, 24, "anysvc")
+    sub_slug = _slug(sub_dim, 24, "any")
+    ver_slug = _slug(version_family.replace(".", "_") if version_family else "", 18, "anyver")
+
+    cve_sorted = sorted({str(c).upper() for c in cve_ids if str(c).strip()})
+    cve_sig = _slug((cve_sorted[0] if cve_sorted else "nocve").replace("-", "_"), 20, "nocve")
+
+    fingerprint = {
+        "layer": str(knowledge_layer).upper(),
+        "service": str(target_service).strip().lower(),
+        "sub_dim": str(sub_dim).strip().lower(),
+        "version_family": str(version_family).strip().lower(),
+        "cve_ids": cve_sorted,
+    }
+    digest = hashlib.md5(
+        json.dumps(fingerprint, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:8]
+
+    return f"SEC_{layer_slug}_{svc_slug}_{sub_slug}_{ver_slug}_{cve_sig}_{digest}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -427,15 +783,25 @@ def cluster_experiences(
                 trigger_level=tl,
                 has_conflict=False,  # 冲突检测在 Phase 4 BCC 中处理
             )
+            # 修复根因 2：注入 source_sessions 到 experiences 中供下层消费
+            source_sessions = sorted(list(set(
+                str(m["exp"].get("metadata", {}).get("source_session_id", "")).strip()
+                for m in comp_metas if m["exp"].get("metadata", {}).get("source_session_id", "")
+            )))
+            for exp in eq_set.experiences:
+                if "metadata" not in exp:
+                    exp["metadata"] = {}
+                exp["metadata"]["source_sessions"] = source_sessions
+
             results.append(eq_set)
 
-    # ── 排序：满足融合阈值（≥3）的排前面，然后按等价集大小降序
+    # ── 排序：满足层级融合阈值的排前面，然后按等价集大小降序
     results.sort(key=lambda s: (not s.meets_fusion_threshold, -len(s.experiences)))
 
     fusion_candidates = [s for s in results if s.meets_fusion_threshold]
     logger.info(
         f"SEC 完成: 共 {len(results)} 个等价集，"
-        f"其中 {len(fusion_candidates)} 个满足融合阈值（≥3条经验）"
+        f"其中 {len(fusion_candidates)} 个满足层级融合阈值"
     )
 
     return results

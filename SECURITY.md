@@ -1,4 +1,4 @@
-# Security Policy
+﻿# Security Policy
 
 ## Supported Versions
 
@@ -10,9 +10,9 @@
 
 ---
 
-## Scope — What RefPenTest Processes
+## Scope — What LORE Processes
 
-RefPenTest 处理的数据包含**真实渗透测试日志**，其中可能含有：
+LORE 处理的数据包含**真实渗透测试日志**，其中可能含有：
 
 - 目标系统 IP / 主机名 / 端口
 - CVE 漏洞编号与利用细节
@@ -94,3 +94,4 @@ pip audit    # 检查已知漏洞依赖
 ---
 
 *This policy is effective as of 2026-03-01.*
+

@@ -209,10 +209,10 @@ class AdapterRegistry:
 
         # 兜底：尝试从 adapters 子包懒加载（避免循环导入问题）
         _LAZY_MAP = {
-            "cai": "src.log_adapter.adapters.cai.CaiAdapter",
-            "langchain": "src.log_adapter.adapters.langchain.LangChainAdapter",
-            "openai_assistant": "src.log_adapter.adapters.openai_assistant.OpenAIAssistantAdapter",
-            "generic": "src.log_adapter.adapters.generic.GenericJsonlAdapter",
+            "cai": "src.layer0.adapters.cai.CaiAdapter",
+            "langchain": "src.layer0.adapters.langchain.LangChainAdapter",
+            "openai_assistant": "src.layer0.adapters.openai_assistant.OpenAIAssistantAdapter",
+            "generic": "src.layer0.adapters.generic.GenericJsonlAdapter",
         }
         if name in _LAZY_MAP:
             import importlib  # noqa: PLC0415

@@ -1,5 +1,5 @@
-"""
-RefPenTest 知识提炼系统 — Dashboard 后端
+﻿"""
+LORE 知识提炼系统 — Dashboard 后端
 为经验库浏览、会话分析和流水线管理提供 RESTful API
 """
 
@@ -22,22 +22,22 @@ from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 
 # ── 路径配置 ─────────────────────────────────────────────────────────────────
-ROOT_DIR    = Path(__file__).parent.parent          # RefPenTest/
+ROOT_DIR    = Path(__file__).parent.parent          # LORE/
 WORKSPACE   = ROOT_DIR.parent                       # 语料/ (含 .venv)
 DATA_DIR    = ROOT_DIR / "data" / "layer2_output"
 LAYER3_DIR  = ROOT_DIR / "data" / "layer3_output"
 LOGS_DIR    = ROOT_DIR / "logs"
-REFPENTEST  = ROOT_DIR                              # 主入口就在 ROOT_DIR 内
-PIPELINE_PY = ROOT_DIR / "run_layer2_analysis.py"
+LORE_ROOT   = ROOT_DIR                              # 主入口就在 ROOT_DIR 内
+PIPELINE_PY = ROOT_DIR / "run" / "run_layer2_analysis.py"
 CRAWLER_PY  = ROOT_DIR / "main_crawler.py"
 SYNC_PY     = ROOT_DIR / "scripts" / "sync_data_light.py"
 RAW_DATA_DIR = ROOT_DIR / "raw_data"
 PYTHON_EXE  = WORKSPACE / ".venv" / "Scripts" / "python.exe"
 # ── Layer 1-3 脚本路径 ────────────────────────────────────────────────────────
-LAYER1_PY       = ROOT_DIR / "run_layer1_llm_batch.py"
-LAYER3_P12_PY   = ROOT_DIR / "run_layer3_phase12.py"
-LAYER3_P34_PY   = ROOT_DIR / "run_layer3_phase34.py"
-LAYER3_P5_PY    = ROOT_DIR / "run_layer3_phase5.py"
+LAYER1_PY       = ROOT_DIR / "run" / "run_layer1_llm_batch.py"
+LAYER3_P12_PY   = ROOT_DIR / "run" / "run_layer3_phase12.py"
+LAYER3_P34_PY   = ROOT_DIR / "run" / "run_layer3_phase34.py"
+LAYER3_P5_PY    = ROOT_DIR / "run" / "run_layer3_phase5.py"
 
 # ── 微信专属路径 ──────────────────────────────────────────────────────────────
 CRAWL_WECHAT_PY = ROOT_DIR / "crawlers" / "wechat_crawler" / "sogou_crawler.py"
@@ -335,7 +335,7 @@ def api_pipeline_run():
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                cwd=str(REFPENTEST),
+                cwd=str(LORE_ROOT),
                 env={**os.environ, "PYTHONIOENCODING": "utf-8"},
                 timeout=600,
             )
@@ -1055,7 +1055,8 @@ def api_consolidated():
         prov    = d.get("provenance", {})
         n_src   = len(prov.get("source_exp_ids", []))
         sess    = prov.get("source_sessions", [])
-        layer   = d.get("knowledge_layer", "")
+        raw_layer = d.get("knowledge_layer", "")
+        layer   = "FACTUAL" if str(raw_layer).startswith("FACTUAL_") else raw_layer
         content = d.get("content", {})
 
         # 提取关键展示字段（层特定）
@@ -1068,13 +1069,25 @@ def api_consolidated():
                 "THEN":    dr.get("THEN", []),
                 "NOT":     dr.get("NOT", []),
             }
-        elif layer in ("FACTUAL_RULE",):
+        elif layer == "FACTUAL":
             facts = content.get("discovered_facts", [])
+            cem = content.get("cve_exploitation_map", {})
+            factual_source = ""
+            if cem or str(raw_layer).endswith("_LLM"):
+                factual_source = "llm"
+            elif facts or str(raw_layer).endswith("_RULE"):
+                factual_source = "rule"
             display = {
                 "facts": [
                     {"key": f.get("key",""), "value": f.get("value",""), "count": f.get("count", 1)}
                     for f in facts if isinstance(f, dict)
-                ]
+                ],
+                "cve_map": [
+                    {"cve": cve, "status": v.get("consensus_status",""), "conf": v.get("confidence",0)}
+                    for cve, v in cem.items() if isinstance(v, dict)
+                ],
+                "cve_unexplored": content.get("cve_unexplored", []),
+                "factual_source": factual_source,
             }
         elif layer == "PROCEDURAL_POS":
             display = {
@@ -1099,15 +1112,6 @@ def api_consolidated():
                 "session_breakdown": content.get("session_breakdown", {}),
                 "recommendations": content.get("recommendations", []),
                 "query_effectiveness": content.get("query_effectiveness", {}),
-            }
-        elif layer == "FACTUAL_LLM":
-            cem  = content.get("cve_exploitation_map", {})
-            display = {
-                "cve_map": [
-                    {"cve": cve, "status": v.get("consensus_status",""), "conf": v.get("confidence",0)}
-                    for cve, v in cem.items() if isinstance(v, dict)
-                ],
-                "cve_unexplored": content.get("cve_unexplored", []),
             }
         elif layer == "CONCEPTUAL":
             ac = content.get("applicable_conditions", {})
@@ -1339,7 +1343,7 @@ def api_gap_crawl():
                 ],
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
-                cwd=str(REFPENTEST),
+                cwd=str(LORE_ROOT),
                 env={**os.environ, "PYTHONIOENCODING": "utf-8"},
                 timeout=300,
             )
@@ -1399,7 +1403,7 @@ def api_pipeline_full():
                         [str(PYTHON_EXE), str(script_path)],
                         capture_output=True, text=True,
                         encoding="utf-8", errors="replace",
-                        cwd=str(REFPENTEST),
+                        cwd=str(LORE_ROOT),
                         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
                         timeout=600,
                     )
@@ -1436,8 +1440,9 @@ def api_pipeline_full_status():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  RefPenTest 知识提炼系统 Dashboard")
+    print("  LORE 知识提炼系统 Dashboard")
     print(f"  数据路径 : {DATA_DIR}")
     print("  访问地址 : http://localhost:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=True)
+

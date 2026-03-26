@@ -128,25 +128,18 @@ class LangChainAdapter(LogAdapter):
         file_path: Path,
     ) -> Tuple[SessionMeta, Iterator[CanonicalAgentTurn]]:
         self.validate_file(file_path)
-        events = list(self._iter_json_lines(file_path))
 
-        if not events:
+        meta = self._scan_session_meta(file_path, file_path.stem)
+        if meta.total_turns == 0 and not meta.start_time and not meta.end_time:
             session_id = file_path.stem
-            meta = SessionMeta.from_unknown(session_id)
-            return meta, iter([])
-
-        # ── 检测协议版本 ────────────────────────────────────────────────────
-        is_v2 = any(e.get("type", "").startswith("on_") for e in events[:20])
-
-        # ── 会话元数据提取 ──────────────────────────────────────────────────
-        meta = self._extract_session_meta(events, file_path.stem, is_v2)
+            return SessionMeta.from_unknown(session_id), iter([])
 
         # ── 惰性迭代器工厂 ──────────────────────────────────────────────────
         rag_names = self._rag_tool_names
-        if is_v2:
-            turn_iter = self._iter_v2(events, meta.session_id, rag_names)
+        if bool(meta.raw_metadata.get("is_v2")):
+            turn_iter = self._iter_v2(file_path, meta.session_id, rag_names)
         else:
-            turn_iter = self._iter_v1(events, meta.session_id, rag_names)
+            turn_iter = self._iter_v1(file_path, meta.session_id, rag_names)
 
         return meta, turn_iter
 
@@ -154,7 +147,7 @@ class LangChainAdapter(LogAdapter):
 
     @staticmethod
     def _iter_v1(
-        events: List[Dict[str, Any]],
+        file_path: Path,
         session_id: str,
         rag_names: Set[str],
     ) -> Iterator[CanonicalAgentTurn]:
@@ -163,7 +156,7 @@ class LangChainAdapter(LogAdapter):
         pending_reasoning: Optional[str] = None
         turn_idx = 0
 
-        for obj in events:
+        for obj in LangChainAdapter._iter_json_lines(file_path):
             evt = obj.get("type", "")
 
             # LLM 响应 → 提取推理文本（agent_action 前的 思考文本）
@@ -223,7 +216,7 @@ class LangChainAdapter(LogAdapter):
 
     @staticmethod
     def _iter_v2(
-        events: List[Dict[str, Any]],
+        file_path: Path,
         session_id: str,
         rag_names: Set[str],
     ) -> Iterator[CanonicalAgentTurn]:
@@ -237,7 +230,7 @@ class LangChainAdapter(LogAdapter):
         pending_reasoning: Optional[str] = None
         turn_idx = 0
 
-        for obj in events:
+        for obj in LangChainAdapter._iter_json_lines(file_path):
             evt = obj.get("type", "")
 
             if evt == _V2_LLM_END:
@@ -312,36 +305,49 @@ class LangChainAdapter(LogAdapter):
     # ─── 内部辅助 ────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _extract_session_meta(
-        events: List[Dict[str, Any]],
+    def _scan_session_meta(
+        file_path: Path,
         fallback_id: str,
-        is_v2: bool,
     ) -> SessionMeta:
-        """从事件流中提取会话元数据。"""
+        """单次扫描文件，提取协议版本与会话元数据。"""
         session_id = fallback_id
         start_time = ""
         end_time = ""
         end_type = "unknown"
+        last_time = ""
+        is_v2 = False
+        total_turns = 0
+        saw_any = False
 
-        start_evt = _V2_CHAIN_START if is_v2 else _V1_CHAIN_START
-        end_evt   = _V2_CHAIN_END   if is_v2 else _V1_CHAIN_END
-
-        for obj in events:
+        for obj in LangChainAdapter._iter_json_lines(file_path):
+            saw_any = True
             evt = obj.get("type", "")
-            if evt == start_evt:
+            if evt.startswith("on_"):
+                is_v2 = True
+
+            t = obj.get("timestamp") or obj.get("start_time") or obj.get("end_time") or ""
+            if t:
+                last_time = t
+
+            if evt in (_V1_CHAIN_START, _V2_CHAIN_START):
                 session_id = (
-                    obj.get("run_id") or obj.get("id") or fallback_id
+                    obj.get("run_id") or obj.get("id") or session_id
                 )
-                start_time = obj.get("start_time") or obj.get("timestamp") or ""
-            elif evt == end_evt:
-                end_time = obj.get("end_time") or obj.get("timestamp") or ""
+                start_time = obj.get("start_time") or obj.get("timestamp") or start_time
+            elif evt in (_V1_CHAIN_END, _V2_CHAIN_END):
+                end_time = obj.get("end_time") or obj.get("timestamp") or end_time
                 end_type = "normal"
-                break
+            elif evt in (_V1_TOOL_RESULT, _V2_TOOL_END):
+                total_turns += 1
+
+        if not saw_any:
+            return SessionMeta.from_unknown(fallback_id)
+
+        if not start_time:
+            start_time = last_time
 
         if not end_time:
-            # 尝试从最后一个事件取时间
-            last = events[-1] if events else {}
-            end_time = last.get("timestamp") or last.get("end_time") or ""
+            end_time = last_time
             end_type = "interrupted" if not end_time else "unknown"
 
         return SessionMeta(
@@ -349,7 +355,8 @@ class LangChainAdapter(LogAdapter):
             start_time=start_time,
             end_time=end_time or None,
             session_end_type=end_type,
-            total_turns=-1,  # 总 turn 数在迭代完成后才知道
+            total_turns=total_turns,
+            raw_metadata={"is_v2": is_v2},
         )
 
     @staticmethod

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 
 from ...models import AnnotatedTurnSequence
 from ...utils.log_utils import get_logger
+from ...utils.service_name_normalizer import normalize_service_name as shared_normalize_service_name
 from ..experience_models import (
     Experience,
     ExperienceMaturity,
@@ -32,49 +33,9 @@ from ..experience_models import (
 
 logger = get_logger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# P2: 服务名范式化映射（统一异种写法为标准全称）
-# ─────────────────────────────────────────────────────────────────────────────
-
-_SERVICE_CANONICAL: dict = {
-    "couchdb": "Apache CouchDB",
-    "apache couchdb": "Apache CouchDB",
-    "druid": "Apache Druid",
-    "apache druid": "Apache Druid",
-    "weblogic": "Oracle WebLogic Server",
-    "oracle weblogic": "Oracle WebLogic Server",
-    "oracle weblogic server": "Oracle WebLogic Server",
-    "tomcat": "Apache Tomcat",
-    "apache tomcat": "Apache Tomcat",
-    "nginx": "nginx",
-    "apache": "Apache HTTP Server",
-    "apache http server": "Apache HTTP Server",
-    "mysql": "MySQL",
-    "mariadb": "MariaDB",
-    "postgresql": "PostgreSQL",
-    "postgres": "PostgreSQL",
-    "mongodb": "MongoDB",
-    "elasticsearch": "Elasticsearch",
-    "redis": "Redis",
-    "jenkins": "Jenkins",
-    "jboss": "JBoss Application Server",
-    "spring boot": "Spring Boot",
-    "spring": "Spring Framework",
-    "log4j": "Apache Log4j",
-    "struts": "Apache Struts",
-    "gitlab": "GitLab",
-    "gitea": "Gitea",
-    "wordpress": "WordPress",
-    "joomla": "Joomla",
-    "drupal": "Drupal",
-}
-
-
 def canonicalize_service_name(name: str) -> str:
-    """P2: 将 LLM 日出的服务名统一映射为标准全称。"""
-    if not name:
-        return name
-    return _SERVICE_CANONICAL.get(name.strip().lower(), name.strip())
+    """向后兼容别名：统一走共享服务名规范化实现。"""
+    return shared_normalize_service_name(name)
 
 _RECON_PHASES = {"RECON_WEAPONIZATION", "ENV_PREPARATION"}
 _EXPLOIT_PHASES = {"EXPLOITATION", "ESCALATION", "LATERAL_MOVEMENT", "EXFILTRATION"}
@@ -96,8 +57,13 @@ def _get_event_text(event) -> str:
         parts.append(str(cmd)[:300])
     # 标准输出
     result = event.base.result
-    if result and result.stdout_raw:
-        parts.append(str(result.stdout_raw)[:300])
+    if result:
+        stdout = str(result.stdout_raw or "")
+        stderr = str(result.stderr_raw or "")
+        raw_text = str((result.raw_result or {}).get("_raw_text", "") or "")
+        merged_output = "\n".join(part for part in (stdout, stderr, raw_text) if part)
+        if merged_output:
+            parts.append(merged_output[:300])
     return " | ".join(parts)[:600]
 
 
@@ -165,6 +131,55 @@ def _infer_target_ip_hint(ann_seq: AnnotatedTurnSequence) -> str:
     return "unknown"
 
 
+def _collect_attempted_cves_from_events(ann_seq: AnnotatedTurnSequence) -> List[str]:
+    """当 LLM 未返回 attempted 时，从会话事件中兜底提取 CVE 列表。"""
+    cves: List[str] = []
+    for event in ann_seq.annotated_events:
+        if event.attack_phase not in _EXPLOIT_PHASES:
+            continue
+        text = _get_event_text(event)
+        for cve in _CVE_RE.findall(text):
+            cve_u = cve.upper()
+            if cve_u not in cves:
+                cves.append(cve_u)
+    return cves[:10]
+
+
+def _infer_cve_results_from_events(
+    ann_seq: AnnotatedTurnSequence,
+    attempted_cves: List[str],
+) -> Dict[str, str]:
+    """基于事件证据推断每个 attempted CVE 的 exploitation_results 兜底状态。"""
+    inferred: Dict[str, str] = {}
+    for cve in attempted_cves:
+        cve_u = str(cve).upper()
+        status = "unknown"
+        for event in ann_seq.annotated_events:
+            if event.attack_phase not in _EXPLOIT_PHASES:
+                continue
+            text = _get_event_text(event)
+            if cve_u not in text.upper():
+                continue
+
+            txt_lower = text.lower()
+            outcome = (event.outcome_label or "").lower()
+
+            if "not vulnerable" in txt_lower or "already patched" in txt_lower:
+                status = "patched"
+                break
+            if outcome == "success":
+                status = "success"
+                continue
+            if outcome == "partial_success" and status not in ("success", "patched"):
+                status = "partial"
+                continue
+            if outcome in ("failure", "timeout") and status == "unknown":
+                status = "failure"
+
+        inferred[cve_u] = status
+    return inferred
+
+
 def _call_factual_llm(
     recon_summary: str,
     exploit_summary: str,
@@ -174,16 +189,16 @@ def _call_factual_llm(
     session_outcome: str = "unknown",
 ) -> Optional[Dict[str, Any]]:
     """调用 LLM 生成服务抄象的 FACTUAL 知识。"""
-    from ...prompts import FACTUAL_LLM_SYSTEM, build_factual_llm_prompt
+    from ...prompts import FACTUAL_SYSTEM, build_factual_prompt
 
-    user_prompt = build_factual_llm_prompt(
+    user_prompt = build_factual_prompt(
         recon_summary, exploit_summary, target_ip_hint,
         session_outcome=session_outcome,  # P0-C: 注入会话结果辅助判断 exploitation_status
     )
 
     try:
         raw = client.chat(
-            system_prompt=FACTUAL_LLM_SYSTEM,
+            system_prompt=FACTUAL_SYSTEM,
             user_prompt=user_prompt,
             temperature=0.1,
             max_tokens=1200,
@@ -256,6 +271,32 @@ def extract_factual_experience_llm(
     if not target_service_raw:
         logger.debug("[factual_llm] LLM 未识别出服务名（空）session=%s", session_id[:8])
         return None
+
+    cve_context_raw = parsed.get("cve_context", {})
+    if not isinstance(cve_context_raw, dict):
+        cve_context_raw = {}
+    raw_version_for_check = parsed.get("target_version")
+    target_version_for_check = str(raw_version_for_check).strip() if raw_version_for_check is not None else ""
+    cve_list_for_check = [
+        str(c)
+        for c in cve_context_raw.get("attempted", [])
+        if str(c).strip()
+    ]
+    has_substance = (
+        bool(cve_list_for_check)
+        or (
+            target_version_for_check
+            and target_version_for_check.lower() not in ("none", "null", "unknown", "")
+        )
+    )
+    if not has_substance:
+        logger.debug(
+            "[factual_llm] FACTUAL 内容无实质（无CVE且无版本），跳过 service=%s session=%s",
+            target_service_raw[:40],
+            session_id[:8],
+        )
+        return None
+
     # P2: 规范化服务名
     target_service = canonicalize_service_name(target_service_raw)
 
@@ -266,16 +307,30 @@ def extract_factual_experience_llm(
         target_version = ""
     exploitation_status = str(parsed.get("exploitation_status", "unknown"))[:30]
 
-    cve_context_raw = parsed.get("cve_context", {})
-    if not isinstance(cve_context_raw, dict):
-        cve_context_raw = {}
+    attempted_cves = [str(c).upper()[:30] for c in cve_context_raw.get("attempted", [])[:10] if str(c).strip()]
+    if not attempted_cves:
+        attempted_cves = _collect_attempted_cves_from_events(ann_seq)
+
+    llm_exploitation_results = {
+        str(k).upper()[:30]: str(v)[:100]
+        for k, v in cve_context_raw.get("exploitation_results", {}).items()
+        if str(k).strip()
+    }
+    inferred_results = _infer_cve_results_from_events(ann_seq, attempted_cves)
+
+    merged_exploitation_results: Dict[str, str] = {}
+    for cve in attempted_cves:
+        cve_u = cve.upper()
+        llm_status = (llm_exploitation_results.get(cve_u) or "").strip().lower()
+        if llm_status:
+            merged_exploitation_results[cve_u] = llm_status
+        else:
+            merged_exploitation_results[cve_u] = inferred_results.get(cve_u, "unknown")
+
     cve_context = {
-        "attempted": [str(c)[:30] for c in cve_context_raw.get("attempted", [])[:10]],
-        "exploitation_results": {
-            str(k)[:30]: str(v)[:100]
-            for k, v in cve_context_raw.get("exploitation_results", {}).items()
-        },
-        "unexplored": [str(c)[:30] for c in cve_context_raw.get("unexplored", [])[:10]],
+        "attempted": attempted_cves,
+        "exploitation_results": merged_exploitation_results,
+        "unexplored": [str(c).upper()[:30] for c in cve_context_raw.get("unexplored", [])[:10] if str(c).strip()],
     }
 
     constraints_raw = parsed.get("applicable_constraints", {})

@@ -297,6 +297,11 @@ class ExperienceBundle:
     def conceptual_count(self) -> int:
         return sum(1 for e in self.experiences if e.knowledge_layer == KnowledgeLayer.CONCEPTUAL)
 
+    @property
+    def rag_evaluation_count(self) -> int:
+        """兼容旧汇总字段：当前模型未启用 RAG_EVALUATION 层，固定为 0。"""
+        return 0
+
     def by_layer(self, layer: KnowledgeLayer) -> List[Experience]:
         """按知识层过滤经验条目。"""
         return [e for e in self.experiences if e.knowledge_layer == layer]

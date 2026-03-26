@@ -56,6 +56,125 @@ _VALID_PATTERN_TYPES = frozenset({
 _DEFAULT_PATTERN_TYPE = "attack_strategy"
 
 
+def _collect_text_snippets(value: Any, max_len: int = 300) -> List[str]:
+    """递归提取文本片段，去重保序。"""
+    collected: List[str] = []
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, str):
+            text = node.strip()
+            if text:
+                collected.append(text[:max_len])
+            return
+        if isinstance(node, list):
+            for item in node:
+                _walk(item)
+            return
+        if isinstance(node, dict):
+            for item in node.values():
+                _walk(item)
+
+    _walk(value)
+    return list(dict.fromkeys(collected))
+
+
+def _infer_pattern_type_from_text(text: str) -> str:
+    """根据文本关键词推断 pattern_type。"""
+    low = (text or "").lower()
+    if any(k in low for k in ("waf", "bypass", "defense", "防御", "绕过", "过滤")):
+        return "defense_bypass"
+    if any(k in low for k in ("recon", "侦察", "枚举", "discovery")):
+        return "recon_pattern"
+    if any(k in low for k in ("privilege", "提权", "escalation")):
+        return "privilege_escalation"
+    if any(k in low for k in ("lateral", "横向")):
+        return "lateral_movement"
+    if any(k in low for k in ("credential", "凭据", "密码", "口令")):
+        return "credential_attack"
+    if any(k in low for k in ("post-exploitation", "post exploitation", "后渗透")):
+        return "post_exploitation"
+    if any(k in low for k in ("vulnerability", "漏洞", "cve")):
+        return "vulnerability_pattern"
+    return _DEFAULT_PATTERN_TYPE
+
+
+def _normalize_conceptual_payload(parsed: Dict[str, Any], session_id: str = "") -> Dict[str, Any]:
+    """兼容 legacy 输出格式，归一化为当前提取器字段。
+
+    当前线上模型常返回：
+      {
+        "conceptual_patterns": [{pattern_name, description, evidence, reasoning}, ...],
+        "reasoning": "..."
+      }
+    归一化后补出 core_insight/applicable_conditions/supporting_evidence/confidence_basis。
+    """
+    if not isinstance(parsed, dict):
+        return {}
+
+    has_canonical = bool(parsed.get("core_insight"))
+    patterns_raw = parsed.get("conceptual_patterns")
+    if not isinstance(patterns_raw, list) or not patterns_raw:
+        return parsed
+
+    patterns = [p for p in patterns_raw if isinstance(p, dict)]
+    if not patterns:
+        return parsed
+
+    names = [str(p.get("pattern_name", "")).strip() for p in patterns if str(p.get("pattern_name", "")).strip()]
+    descriptions = [str(p.get("description", "")).strip() for p in patterns if str(p.get("description", "")).strip()]
+    evidences = [str(p.get("evidence", "")).strip() for p in patterns if str(p.get("evidence", "")).strip()]
+    reasonings = [str(p.get("reasoning", "")).strip() for p in patterns if str(p.get("reasoning", "")).strip()]
+
+    normalized = dict(parsed)
+
+    # core_insight：优先使用 description 聚合
+    if not normalized.get("core_insight"):
+        core_parts = descriptions[:2] if descriptions else names[:2]
+        core_insight = "；".join(core_parts).strip()
+        if len(core_insight) < 20:
+            fallback = _collect_text_snippets({"names": names, "descriptions": descriptions, "reasonings": reasonings}, max_len=180)
+            core_insight = "；".join(fallback[:3]).strip()
+        normalized["core_insight"] = core_insight[:400]
+
+    if not normalized.get("pattern_type"):
+        normalized["pattern_type"] = _infer_pattern_type_from_text(
+            " ".join(names + descriptions)
+        )
+
+    # applicable_conditions：legacy 没有结构化字段时，从 pattern 反推
+    ac = normalized.get("applicable_conditions")
+    if not isinstance(ac, dict) or not ac.get("positive"):
+        positive = list(dict.fromkeys([*names, *[d[:120] for d in descriptions if d]]))[:5]
+        trigger_text = " ".join(names + descriptions + evidences + [str(parsed.get("reasoning", ""))])
+        cve_ids = extract_cve_ids(trigger_text)
+        retrieval_triggers = list(dict.fromkeys(names[:5] + cve_ids[:5]))[:8]
+
+        normalized["applicable_conditions"] = {
+            "positive": positive or ["存在可复用的多阶段攻击路径"],
+            "negative": [],
+            "priority_over": [],
+            "retrieval_triggers": retrieval_triggers,
+        }
+
+    if not normalized.get("supporting_evidence"):
+        normalized["supporting_evidence"] = evidences[:5]
+
+    if not normalized.get("confidence_basis"):
+        reasoning = str(parsed.get("reasoning", "")).strip()
+        if not reasoning and reasonings:
+            reasoning = reasonings[0]
+        normalized["confidence_basis"] = reasoning[:200]
+
+    if session_id and not has_canonical:
+        logger.info(
+            "[conceptual] session=%s 使用 legacy payload 归一化，top_keys=%s",
+            session_id[:8],
+            sorted(parsed.keys()),
+        )
+
+    return normalized
+
+
 def _should_extract_conceptual(ann_seq: AnnotatedTurnSequence) -> bool:
     """判断是否满足 CONCEPTUAL 提取触发条件。"""
     exploit_success = sum(
@@ -183,6 +302,7 @@ def extract_conceptual_experiences(
     input_text = _build_conceptual_input(ann_seq)
     parsed = _call_conceptual_llm(input_text, client, session_id)
     if parsed:
+        parsed = _normalize_conceptual_payload(parsed, session_id=session_id)
         exp = _build_experience_from_parsed(
             parsed=parsed,
             session_id=session_id,

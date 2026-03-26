@@ -99,22 +99,38 @@ class OpenAIAssistantAdapter(LogAdapter):
     def can_handle(cls, file_path: Path) -> bool:
         """
         嗅探策略：
-        1. 读取文件内容（最多 8 KB）并尝试 JSON 解析；
+        1. 读取文件头（最多 128 KB）进行特征匹配；
         2. 若根对象是列表且非空，检查第一个元素；
         3. 若根对象是字典且含 "data" 键，检查 data[0]；
         4. 目标对象的 "object" 字段须以 "thread.run.step" 开头。
         """
         try:
             with open(file_path, encoding="utf-8") as fh:
-                chunk = fh.read(8192)
-            root = json.loads(chunk)
+                chunk = fh.read(131072)
+
+            if not chunk:
+                return False
+
+            # 大文件 pretty JSON 常因截断导致 json.loads 失败，先做字符串特征匹配。
+            if re.search(r'"object"\s*:\s*"thread\.run\.step', chunk):
+                return True
+
+            try:
+                root = json.loads(chunk)
+            except json.JSONDecodeError:
+                # 截断 JSON 时退化为弱特征：出现关键对象名和 step_details。
+                return (
+                    "thread.run.step" in chunk
+                    and '"step_details"' in chunk
+                )
+
             first = cls._get_first_step(root)
             if first is None:
                 return False
             obj_type = first.get("object", "")
             return isinstance(obj_type, str) and obj_type.startswith(_OBJECT_PREFIX)
         except Exception:  # noqa: BLE001
-            pass
+            return False
         return False
 
     # ─── 解析主入口 ──────────────────────────────────────────────────────────
@@ -124,6 +140,23 @@ class OpenAIAssistantAdapter(LogAdapter):
         file_path: Path,
     ) -> Tuple[SessionMeta, Iterator[CanonicalAgentTurn]]:
         self.validate_file(file_path)
+
+        first_char = _first_non_ws_char(file_path)
+
+        # 顶层数组格式：使用流式解析，避免一次性加载整文件。
+        if first_char == "[":
+            meta = self._extract_session_meta_from_iter(
+                self._iter_array_steps(file_path),
+                file_path.stem,
+            )
+            if meta.total_turns == 0 and not meta.raw_metadata.get("total_steps"):
+                return SessionMeta.from_unknown(file_path.stem), iter([])
+            turn_iter = self._iter_canonical_stream(
+                self._iter_array_steps(file_path),
+                meta.session_id,
+                self._rag_tool_names,
+            )
+            return meta, turn_iter
 
         try:
             with open(file_path, encoding="utf-8") as fh:
@@ -138,9 +171,29 @@ class OpenAIAssistantAdapter(LogAdapter):
             session_id = file_path.stem
             return SessionMeta.from_unknown(session_id), iter([])
 
-        meta = self._extract_session_meta(steps, file_path.stem)
+        meta = self._extract_session_meta_from_iter(iter(steps), file_path.stem)
         turn_iter = self._iter_canonical(steps, meta.session_id, self._rag_tool_names)
         return meta, turn_iter
+
+    @staticmethod
+    def _iter_array_steps(file_path: Path) -> Iterator[Dict[str, Any]]:
+        for item in _iter_top_level_json_array(file_path):
+            if isinstance(item, dict):
+                yield item
+
+    @staticmethod
+    def _iter_canonical_stream(
+        steps_iter: Iterator[Dict[str, Any]],
+        session_id: str,
+        rag_names: Set[str],
+    ) -> Iterator[CanonicalAgentTurn]:
+        for step_idx, step in enumerate(steps_iter):
+            yield from OpenAIAssistantAdapter._iter_step_tool_calls(
+                step=step,
+                step_idx=step_idx,
+                session_id=session_id,
+                rag_names=rag_names,
+            )
 
     # ─── 内部：CanonicalAgentTurn 迭代器 ────────────────────────────────────
 
@@ -155,110 +208,121 @@ class OpenAIAssistantAdapter(LogAdapter):
         step.type == "message_creation" 的步骤（最终回复）不产生 CanonicalAgentTurn，
         仅 step.type == "tool_calls" 的步骤才映射到工具调用。
         """
-        global_slot = 0
-
         for step_idx, step in enumerate(steps):
-            if step.get("type") != "tool_calls":
+            yield from OpenAIAssistantAdapter._iter_step_tool_calls(
+                step=step,
+                step_idx=step_idx,
+                session_id=session_id,
+                rag_names=rag_names,
+            )
+
+    @staticmethod
+    def _iter_step_tool_calls(
+        step: Dict[str, Any],
+        step_idx: int,
+        session_id: str,
+        rag_names: Set[str],
+    ) -> Iterator[CanonicalAgentTurn]:
+        if step.get("type") != "tool_calls":
+            return
+
+        details = step.get("step_details") or {}
+        tool_calls: List[Dict[str, Any]] = details.get("tool_calls") or []
+
+        # 时间戳处理
+        created_at = step.get("created_at")
+        timestamp = _unix_to_iso(created_at) if created_at else ""
+
+        for slot_j, tc in enumerate(tool_calls):
+            tc_type = tc.get("type", "")
+
+            # ── 函数调用 ──────────────────────────────────────────────
+            if tc_type == "function":
+                fn = tc.get("function") or {}
+                tool_name = fn.get("name") or ""
+                tool_args = _parse_function_arguments(fn.get("arguments"))
+                # output 可能是 JSON 字符串，也可能是纯文本或 None
+                raw_output = fn.get("output") or ""
+                stdout, stderr, return_code = _parse_output(raw_output, fn)
+
+            # ── 内置 file_search / retrieval ──────────────────────────
+            elif tc_type in ("file_search", "retrieval"):
+                tool_name = tc_type
+                tool_args = {}
+                # file_search 的结果放在 tc["file_search"]["results"]
+                fs_results = tc.get("file_search") or tc.get("retrieval") or {}
+                raw_output = json.dumps(fs_results, ensure_ascii=False)
+                stdout, stderr, return_code = raw_output, None, None
+
+            # ── code_interpreter ──────────────────────────────────────
+            elif tc_type == "code_interpreter":
+                tool_name = "code_interpreter"
+                ci = tc.get("code_interpreter") or {}
+                tool_args = {"input": ci.get("input", "")}
+                # outputs 是 [{type:"logs"/image_file, logs:"...", ...}]
+                outputs = ci.get("outputs") or []
+                log_parts = [
+                    o.get("logs", "") for o in outputs if o.get("type") == "logs"
+                ]
+                stdout = "\n".join(log_parts) if log_parts else ""
+                # 若存在 image 输出，记录文件 ID
+                images = [
+                    o.get("image", {}).get("file_id", "")
+                    for o in outputs if o.get("type") == "image_file"
+                ]
+                stderr = None
+                return_code = None
+                if images:
+                    raw_output = stdout + "\n[images:" + ",".join(images) + "]"
+                else:
+                    raw_output = stdout
+
+            else:
+                # 未知工具类型，记录并跳过
+                logger.debug(
+                    "[OpenAIAssistantAdapter] 未知 tool_call type: %s（step %d slot %d）",
+                    tc_type, step_idx, slot_j,
+                )
                 continue
 
-            details = step.get("step_details") or {}
-            tool_calls: List[Dict[str, Any]] = details.get("tool_calls") or []
-
-            # 时间戳处理
-            created_at = step.get("created_at")
-            timestamp = _unix_to_iso(created_at) if created_at else ""
-
-            for slot_j, tc in enumerate(tool_calls):
-                tc_type = tc.get("type", "")
-
-                # ── 函数调用 ──────────────────────────────────────────────
-                if tc_type == "function":
-                    fn = tc.get("function") or {}
-                    tool_name = fn.get("name") or ""
-                    tool_args = _parse_function_arguments(fn.get("arguments"))
-                    # output 可能是 JSON 字符串，也可能是纯文本或 None
-                    raw_output = fn.get("output") or ""
-                    stdout, stderr, return_code = _parse_output(raw_output, fn)
-
-                # ── 内置 file_search / retrieval ──────────────────────────
-                elif tc_type in ("file_search", "retrieval"):
-                    tool_name = tc_type
-                    tool_args = {}
-                    # file_search 的结果放在 tc["file_search"]["results"]
-                    fs_results = tc.get("file_search") or tc.get("retrieval") or {}
-                    raw_output = json.dumps(fs_results, ensure_ascii=False)
-                    stdout, stderr, return_code = raw_output, None, None
-
-                # ── code_interpreter ──────────────────────────────────────
-                elif tc_type == "code_interpreter":
-                    tool_name = "code_interpreter"
-                    ci = tc.get("code_interpreter") or {}
-                    tool_args = {"input": ci.get("input", "")}
-                    # outputs 是 [{type:"logs"/image_file, logs:"...", ...}]
-                    outputs = ci.get("outputs") or []
-                    log_parts = [
-                        o.get("logs", "") for o in outputs if o.get("type") == "logs"
-                    ]
-                    stdout = "\n".join(log_parts) if log_parts else ""
-                    # 若存在 image 输出，记录文件 ID
-                    images = [
-                        o.get("image", {}).get("file_id", "")
-                        for o in outputs if o.get("type") == "image_file"
-                    ]
-                    stderr = None
-                    return_code = None
-                    if images:
-                        raw_output = stdout + "\n[images:" + ",".join(images) + "]"
-                    else:
-                        raw_output = stdout
-
-                else:
-                    # 未知工具类型，记录并跳过
-                    logger.debug(
-                        "[OpenAIAssistantAdapter] 未知 tool_call type: %s（step %d slot %d）",
-                        tc_type, step_idx, slot_j,
-                    )
-                    continue
-
-                # ── RAG 识别 ─────────────────────────────────────────────
-                rag_info: Optional[RagQueryInfo] = None
-                if tool_name.lower() in rag_names:
-                    query_str = (
-                        tool_args.get("query")
-                        or tool_args.get("input")
-                        or str(tool_args)
-                    )
-                    rag_info = RagQueryInfo(
-                        query=query_str,
-                        results_raw=stdout or raw_output,
-                        result_count=_count_rag_results(stdout or raw_output),
-                    )
-
-                yield CanonicalAgentTurn(
-                    session_id=session_id,
-                    turn_index=step_idx,
-                    timestamp=timestamp,
-                    tool_name=tool_name,
-                    tool_args=tool_args,
-                    stdout=stdout or None,
-                    stderr=stderr,
-                    return_code=return_code,
-                    success=None if return_code is None else (return_code == 0),
-                    timed_out=False,
-                    rag_info=rag_info,
-                    assistant_reasoning=None,  # Assistants API 不暴露 CoT
-                    slot_in_turn=slot_j,
-                    raw_metadata={
-                        "step_id":    step.get("id", ""),
-                        "run_id":     step.get("run_id", ""),
-                        "thread_id":  step.get("thread_id", ""),
-                        "call_id":    tc.get("id", ""),
-                        "tc_type":    tc_type,
-                        "completed_at": step.get("completed_at"),
-                        "usage":      step.get("usage"),
-                    },
+            # ── RAG 识别 ─────────────────────────────────────────────
+            rag_info: Optional[RagQueryInfo] = None
+            if tool_name.lower() in rag_names:
+                query_str = (
+                    tool_args.get("query")
+                    or tool_args.get("input")
+                    or str(tool_args)
                 )
-                global_slot += 1
+                rag_info = RagQueryInfo(
+                    query=query_str,
+                    results_raw=stdout or raw_output,
+                    result_count=_count_rag_results(stdout or raw_output),
+                )
+
+            yield CanonicalAgentTurn(
+                session_id=session_id,
+                turn_index=step_idx,
+                timestamp=timestamp,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                stdout=stdout or None,
+                stderr=stderr,
+                return_code=return_code,
+                success=None if return_code is None else (return_code == 0),
+                timed_out=False,
+                rag_info=rag_info,
+                assistant_reasoning=None,  # Assistants API 不暴露 CoT
+                slot_in_turn=slot_j,
+                raw_metadata={
+                    "step_id":    step.get("id", ""),
+                    "run_id":     step.get("run_id", ""),
+                    "thread_id":  step.get("thread_id", ""),
+                    "call_id":    tc.get("id", ""),
+                    "tc_type":    tc_type,
+                    "completed_at": step.get("completed_at"),
+                    "usage":      step.get("usage"),
+                },
+            )
 
     # ─── 内部辅助 ────────────────────────────────────────────────────────────
 
@@ -285,8 +349,8 @@ class OpenAIAssistantAdapter(LogAdapter):
         return None
 
     @staticmethod
-    def _extract_session_meta(
-        steps: List[Dict[str, Any]],
+    def _extract_session_meta_from_iter(
+        steps: Iterator[Dict[str, Any]],
         fallback_id: str,
     ) -> SessionMeta:
         """从 step 列表中提取会话元数据。"""
@@ -296,7 +360,11 @@ class OpenAIAssistantAdapter(LogAdapter):
         start_ts: Optional[int] = None
         end_ts: Optional[int] = None
 
+        total_steps = 0
+        tool_call_step_count = 0
+
         for step in steps:
+            total_steps += 1
             if not thread_id:
                 thread_id = step.get("thread_id", "")
             if not run_id:
@@ -309,6 +377,11 @@ class OpenAIAssistantAdapter(LogAdapter):
             if completed is not None:
                 if end_ts is None or completed > end_ts:
                     end_ts = completed
+            if step.get("type") == "tool_calls":
+                tool_call_step_count += 1
+
+        if total_steps == 0:
+            return SessionMeta.from_unknown(fallback_id)
 
         session_id = thread_id or run_id or fallback_id
         return SessionMeta(
@@ -316,11 +389,11 @@ class OpenAIAssistantAdapter(LogAdapter):
             start_time=_unix_to_iso(start_ts) if start_ts else "",
             end_time=_unix_to_iso(end_ts) if end_ts else None,
             session_end_type="normal" if end_ts else "unknown",
-            total_turns=len([s for s in steps if s.get("type") == "tool_calls"]),
+            total_turns=tool_call_step_count,
             raw_metadata={
                 "thread_id": thread_id,
                 "run_id":    run_id,
-                "total_steps": len(steps),
+                "total_steps": total_steps,
             },
         )
 
@@ -438,3 +511,80 @@ def _count_rag_results(output_raw: Optional[str]) -> int:
     if matches:
         return len(matches)
     return -1
+
+
+def _first_non_ws_char(file_path: Path) -> str:
+    """返回文件中首个非空白字符；空文件返回空字符串。"""
+    with open(file_path, encoding="utf-8") as fh:
+        while True:
+            ch = fh.read(1)
+            if not ch:
+                return ""
+            if not ch.isspace():
+                return ch
+
+
+def _iter_top_level_json_array(
+    file_path: Path,
+    chunk_size: int = 65536,
+) -> Iterator[Any]:
+    """流式解析顶层 JSON 数组，逐项 yield，避免一次性载入整文件。"""
+    decoder = json.JSONDecoder()
+    buffer = ""
+    in_array = False
+    finished = False
+
+    with open(file_path, encoding="utf-8") as fh:
+        while True:
+            chunk = fh.read(chunk_size)
+            if not chunk and not buffer:
+                break
+
+            buffer += chunk
+            pos = 0
+
+            while True:
+                while pos < len(buffer) and buffer[pos].isspace():
+                    pos += 1
+
+                if not in_array:
+                    if pos >= len(buffer):
+                        break
+                    if buffer[pos] != "[":
+                        raise ValueError("Top-level JSON is not an array")
+                    in_array = True
+                    pos += 1
+                    continue
+
+                while pos < len(buffer) and buffer[pos].isspace():
+                    pos += 1
+                if pos >= len(buffer):
+                    break
+
+                if buffer[pos] == "]":
+                    finished = True
+                    pos += 1
+                    break
+
+                if buffer[pos] == ",":
+                    pos += 1
+                    continue
+
+                try:
+                    item, next_pos = decoder.raw_decode(buffer, pos)
+                except json.JSONDecodeError:
+                    # 可能对象被 chunk 截断，等待下一批数据
+                    break
+
+                yield item
+                pos = next_pos
+
+            buffer = buffer[pos:]
+            if finished:
+                break
+
+            if not chunk:
+                # EOF 仍未闭合数组，视为格式错误
+                if buffer.strip():
+                    raise ValueError("Malformed JSON array")
+                break

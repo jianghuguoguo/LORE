@@ -1,4 +1,4 @@
-# src/layer4/scheduler.py
+﻿# src/layer4/scheduler.py
 """
 Layer 4 APScheduler 调度器。
 
@@ -24,6 +24,8 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .dispatcher import Layer4Dispatcher
+
+from ..utils.config_loader import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -77,19 +79,6 @@ def start_scheduler(
 
 # ── 作为独立脚本运行 ──────────────────────────────────────────────────────────
 
-def _load_config_yaml(path: str) -> dict:
-    try:
-        import yaml
-        with open(path, encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except ImportError:
-        logger.warning("PyYAML 未安装，使用默认配置")
-        return {}
-    except FileNotFoundError:
-        logger.warning("配置文件 %s 不存在，使用默认配置", path)
-        return {}
-
-
 def main() -> None:
     import argparse
 
@@ -99,7 +88,7 @@ def main() -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # 确保 RefPenTest/ 在 sys.path
+    # 确保 LORE/ 在 sys.path
     _root = Path(__file__).parent.parent.parent
     for _p in [str(_root), str(_root / "crawlers")]:
         if _p not in sys.path:
@@ -109,7 +98,7 @@ def main() -> None:
     parser.add_argument(
         "--config",
         default=str(_root / "configs" / "config.yaml"),
-        help="配置文件路径（默认 configs/config.yaml）",
+        help="用户配置路径（默认 configs/config.yaml；设计参数自动从 configs/design.yaml 合并）",
     )
     parser.add_argument(
         "--run-now",
@@ -118,8 +107,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    cfg_all = _load_config_yaml(args.config)
-    layer4_cfg = cfg_all.get("layer4", {})
+    try:
+        layer4_cfg = get_config(Path(args.config)).layer4_config
+    except Exception as exc:
+        logger.warning("配置文件加载失败，使用默认值: %s", exc)
+        layer4_cfg = {}
 
     from .dispatcher import Layer4Dispatcher
     dispatcher = Layer4Dispatcher(layer4_cfg)
@@ -148,3 +140,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

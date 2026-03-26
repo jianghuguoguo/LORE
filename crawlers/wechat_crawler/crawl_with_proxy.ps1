@@ -5,7 +5,7 @@
 
 $REG  = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 $PY   = "d:\渗透测试相关\语料库\语料\.venv\Scripts\python.exe"
-$SCH  = "d:\渗透测试相关\语料库\语料\RefPenTest\crawlers\wechat_crawler\scheduler.py"
+$SCH  = "d:\渗透测试相关\语料库\语料\LORE\crawlers\wechat_crawler\scheduler.py"
 
 function Set-Proxy($port) {
     Set-ItemProperty $REG ProxyServer "127.0.0.1:$port"

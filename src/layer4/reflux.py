@@ -15,11 +15,15 @@ src/layer4/reflux.py
 """
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+from .reflux_document_builder import (
+    resolve_reflux_dataset_id,
+    validate_document_for_retrieval,
+)
 
 if TYPE_CHECKING:
     from ..layer4.conflict import LocalKLMBackend
@@ -28,173 +32,319 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# WAF-safe 序列化辅助：递归移除会触发 WAF 的可执行命令字段
-# ─────────────────────────────────────────────────────────────────────────────
+MATURITY_LABEL: Dict[str, str] = {
+    "consolidated": "★★★ consolidated",
+    "validated": "★★☆ validated",
+    "raw": "★☆☆ raw",
+}
 
-_WAF_SENSITIVE_KEYS = frozenset({"command", "cmd", "exec", "payload", "exploit_code"})
+
+def _normalize_layer(layer: str) -> str:
+    if str(layer).startswith("FACTUAL_"):
+        return "FACTUAL"
+    return layer or "UNKNOWN"
 
 
-def _strip_commands(obj: Any) -> Any:
-    """
-    递归遍历 dict/list，将 _WAF_SENSITIVE_KEYS 对应的字段值替换为占位符，
-    避免上传到 RAGFlow 时触发服务器 WAF（502）。
-    完整命令仍保留在本地 KLM，RAGFlow 只存储可供语义检索的描述性字段。
-    """
-    if isinstance(obj, dict):
-        return {
-            k: ("[COMMAND_REDACTED]" if k in _WAF_SENSITIVE_KEYS else _strip_commands(v))
-            for k, v in obj.items()
-        }
-    if isinstance(obj, list):
-        return [_strip_commands(item) for item in obj]
-    return obj
+def _to_list(value: Any) -> List[str]:
+    """把字符串/列表统一为字符串列表，便于 THEN/NOT 等字段拼接。"""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _collect_factual_cve_status(content: Dict[str, Any]) -> Dict[str, str]:
+    """聚合 FACTUAL CVE 状态，兼容 consolidated 与 LLM 原始 schema。"""
+    result: Dict[str, str] = {}
+
+    cve_map = content.get("cve_exploitation_map", {})
+    if isinstance(cve_map, dict):
+        for cve, info in cve_map.items():
+            cve_id = str(cve).strip().upper()
+            if not cve_id:
+                continue
+            status = ""
+            if isinstance(info, dict):
+                status = str(
+                    info.get("consensus_status")
+                    or info.get("consensus_category")
+                    or info.get("status")
+                    or ""
+                ).strip()
+            else:
+                status = str(info).strip()
+            result[cve_id] = status or "attempted"
+
+    cve_ctx = content.get("cve_context", {})
+    if isinstance(cve_ctx, dict):
+        status_map: Dict[str, Any] = {}
+        for key in ("exploitation_status", "exploitation_results"):
+            raw_map = cve_ctx.get(key, {})
+            if isinstance(raw_map, dict):
+                status_map.update(raw_map)
+
+        attempted = cve_ctx.get("attempted", [])
+        if isinstance(attempted, list):
+            for cve in attempted:
+                cve_raw = str(cve).strip()
+                cve_id = cve_raw.upper()
+                if not cve_id or cve_id in result:
+                    continue
+                status = status_map.get(cve_raw)
+                if status is None:
+                    status = status_map.get(cve_id)
+                if isinstance(status, dict):
+                    status = status.get("status") or status.get("consensus_status")
+                result[cve_id] = str(status).strip() if status else "attempted"
+
+    return result
+
+
+def _format_conceptual_body(content: Dict[str, Any]) -> List[str]:
+    """格式化 CONCEPTUAL 层，避免回落到 dict repr。"""
+    lines: List[str] = []
+    core_insight = str(content.get("core_insight", "")).strip()
+    pattern_type = str(content.get("pattern_type", "")).strip()
+
+    if core_insight:
+        lines.append(f"Insight: {core_insight}")
+    if pattern_type:
+        lines.append(f"Pattern: {pattern_type}")
+
+    conditions = content.get("applicable_conditions", {})
+    if isinstance(conditions, dict):
+        positive = _to_list(conditions.get("positive"))
+        negative = _to_list(conditions.get("negative"))
+        triggers = _to_list(conditions.get("retrieval_triggers"))
+        if positive:
+            lines.append("Applies when: " + "; ".join(positive[:5]))
+        if negative:
+            lines.append("Not for: " + "; ".join(negative[:3]))
+        if triggers:
+            lines.append("Retrieval triggers: " + "; ".join(triggers[:8]))
+
+    evidence = _to_list(content.get("supporting_evidence"))
+    if evidence:
+        lines.append("Evidence: " + "; ".join(evidence[:3]))
+
+    return lines or ["(no conceptual content)"]
+
+
+def _format_metacognitive_body(content: Dict[str, Any]) -> List[str]:
+    """格式化 METACOGNITIVE 层，优先使用已知结构字段。"""
+    lines: List[str] = []
+
+    goal = str(content.get("session_goal", "")).strip()
+    outcome = str(content.get("session_outcome", "")).strip()
+    if goal:
+        lines.append(f"Session goal: {goal}")
+    if outcome:
+        lines.append(f"Outcome: {outcome}")
+
+    lessons = _to_list(content.get("key_lessons"))
+    structured = content.get("key_lessons_structured", [])
+    if isinstance(structured, list):
+        for item in structured:
+            if not isinstance(item, dict):
+                continue
+            lesson = str(item.get("lesson") or item.get("rule") or "").strip()
+            if lesson:
+                lessons.append(lesson)
+
+    uniq_lessons: List[str] = []
+    seen: set = set()
+    for lesson in lessons:
+        if lesson and lesson not in seen:
+            seen.add(lesson)
+            uniq_lessons.append(lesson)
+    if uniq_lessons:
+        lines.append("Key lessons: " + "; ".join(uniq_lessons[:5]))
+
+    mistakes = content.get("decision_mistakes", [])
+    if isinstance(mistakes, list):
+        rendered: List[str] = []
+        for item in mistakes[:3]:
+            if not isinstance(item, dict):
+                continue
+            mistake = str(item.get("mistake", "")).strip()
+            rule = str(item.get("rule", "")).strip()
+            if mistake and rule:
+                rendered.append(f"{mistake} => {rule}")
+        if rendered:
+            lines.append("Decision mistakes: " + "; ".join(rendered))
+
+    optimal = _to_list(content.get("optimal_decision_path"))
+    if optimal:
+        lines.append("Optimal path: " + "; ".join(optimal[:6]))
+
+    missed = _to_list(content.get("missed_opportunities"))
+    if missed:
+        lines.append("Missed opportunities: " + "; ".join(missed[:4]))
+
+    failure_pattern = str(content.get("failure_pattern", "")).strip()
+    if failure_pattern and failure_pattern.lower() not in {"none", "null"}:
+        lines.append(f"Failure pattern: {failure_pattern}")
+
+    success_factor = str(content.get("success_factor", "")).strip()
+    if success_factor and success_factor.lower() not in {"none", "null"}:
+        lines.append(f"Success factor: {success_factor}")
+
+    return lines or ["(no metacognitive content)"]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 格式化：经验 → RAGFlow 文档文本
 # ─────────────────────────────────────────────────────────────────────────────
 
-def              format_exp_for_rag(exp: Dict[str, Any]) -> str:
+def format_chunk_for_ragflow(exp: Dict[str, Any]) -> str:
     """
-    将 KLM 经验条目格式化为 RAGFlow 可检索的纯文本文档。
+    将 LORE 经验条目格式化为写入 RAGFlow 的 chunk 文本。
 
-    文档结构（纯文本，方便 naive 分块器处理）：
-    ```
-    [XPEC] {knowledge_layer} | {exp_id}
-    目标服务: ...
-    CVE: ...
-    融合置信度: ...
-    会话数: ...
-
-    === 核心内容 ===
-    ...（根据 knowledge_layer 输出不同字段）
-
-    === 适用约束 ===
-    ...
-
-    === 来源溯源 ===
-    source_exp_ids: ...
-    n_independent_sessions: ...
-    ```
+    关键要求：
+    1. 首行嵌入成熟度标签（Agent 可直接读取）。
+    2. FACTUAL 仅保留稳定事实，过滤瞬态键（open_port/http_status/output_summary）。
+    3. 保持 QUERY_HINTS 段，兼容现有质量校验与检索路由。
     """
-    exp_id        = exp.get("exp_id", "UNKNOWN")
-    layer         = exp.get("knowledge_layer", "UNKNOWN")
-    maturity      = exp.get("maturity", "unknown")
-    p_fused       = exp.get("p_fused") or exp.get("confidence") or 0.0
-    n_sessions    = exp.get("n_independent_sessions") or 1
-    metadata      = exp.get("metadata") or {}
-    constraints   = metadata.get("applicable_constraints") or {}
-    target_svc    = (
+    exp_id = exp.get("exp_id", "UNKNOWN")
+    layer = _normalize_layer(str(exp.get("knowledge_layer", "UNKNOWN")))
+    content = exp.get("content") or {}
+    metadata = exp.get("metadata") or {}
+    constraints = metadata.get("applicable_constraints") or {}
+
+    maturity = str(exp.get("maturity", "raw") or "raw").lower()
+    p_fused = float(exp.get("p_fused") or exp.get("confidence") or 0.0)
+    n_sess = int(exp.get("n_independent_sessions") or 1)
+    label = MATURITY_LABEL.get(maturity, MATURITY_LABEL["raw"])
+
+    target_service = (
         exp.get("target_service")
-        or constraints.get("target_service", "")
+        or content.get("target_service")
+        or constraints.get("target_service")
+        or "unknown"
     )
-    cve_ids       = (
+
+    # 问题 3 修复：同步 content.cve_context.attempted 到顶层 cve_ids 做 RAG 检索标签
+    cve_ids = (
         exp.get("cve_ids")
+        or content.get("cve_ids")
         or constraints.get("cve_ids")
-        or []
     )
-    provenance    = exp.get("provenance") or {}
-    source_ids    = (
-        exp.get("source_exp_ids")
-        or provenance.get("source_exp_ids")
-        or []
-    )
-    content       = exp.get("content") or {}
+    if not cve_ids:
+        # 深度扫描 content.cve_context.attempted (FACTUAL_LLM 逻辑)
+        cve_ids = content.get("cve_context", {}).get("attempted", [])
+    
+    if not isinstance(cve_ids, list):
+        cve_ids = [cve_ids] if cve_ids else []
+    
+    cve_ids = [str(c).upper() for c in cve_ids if str(c).strip()]
 
-    lines: List[str] = []
-
-    # ── 头部 ──────────────────────────────────────────────────────────────────
-    lines.append(f"[XPEC] {layer} | {exp_id}")
-    if target_svc:
-        lines.append(f"目标服务: {target_svc}")
+    header_lines: List[str] = [
+        f"[{label} | {n_sess} sessions | p={p_fused:.2f}]",
+        f"[XPEC] {layer} | {exp_id}",
+        f"knowledge_layer: {layer}",
+        f"target_service: {target_service}",
+        f"confidence: {p_fused:.4f}",
+    ]
     if cve_ids:
-        cve_str = ", ".join(cve_ids) if isinstance(cve_ids, list) else str(cve_ids)
-        lines.append(f"CVE: {cve_str}")
-    lines.append(f"融合置信度 (p_fused): {p_fused:.4f}")
-    lines.append(f"独立会话数: {n_sessions}  成熟度: {maturity}")
-    lines.append("")
+        header_lines.append("cve_ids: " + ", ".join(cve_ids))
 
-    # ── 核心内容（按 layer 分派）──────────────────────────────────────────────
-    lines.append("=== 核心内容 ===")
-    if layer in ("PROCEDURAL_NEG", "PROCEDURAL_POS"):
-        failure_dim = content.get("failure_dimension") or content.get("success_dimension", "")
-        failure_sub = content.get("failure_sub_dimension") or content.get("success_sub_dimension", "")
-        if failure_dim:
-            lines.append(f"维度: {failure_dim}/{failure_sub}")
-        dr = content.get("decision_rule")
-        if dr:
-            if isinstance(dr, dict):
-                for key, val in dr.items():
-                    if val:
-                        val_str = (
-                            json.dumps(_strip_commands(val), ensure_ascii=False)
-                            if isinstance(val, (list, dict))
-                            else str(val)
-                        )
-                        lines.append(f"  {key}: {val_str}")
-            else:
-                lines.append(f"  决策规则: {dr}")
-        evidence = content.get("evidence", "")
-        if evidence:
-            lines.append(f"证据: {evidence[:300]}")
+    body_lines: List[str] = []
+    if layer == "PROCEDURAL_NEG":
+        dr = content.get("decision_rule", {}) if isinstance(content.get("decision_rule"), dict) else {}
+        then_items = _to_list(dr.get("THEN"))
+        not_items = _to_list(dr.get("NOT"))
+        body_lines.append(f"IF {str(dr.get('IF', '')).strip()}")
+        body_lines.append(f"THEN {'; '.join(then_items)}")
+        body_lines.append(f"NOT {'; '.join(not_items)}")
+    elif layer == "PROCEDURAL_POS":
+        context_condition = (
+            str(content.get("context_condition", "")).strip()
+            or "; ".join(_to_list(content.get("preconditions")))
+            or str(content.get("attack_phase", "")).strip()
+        )
+        command = str(content.get("command_template", "")).strip()
+        expected = (
+            str(content.get("expected_signal", "")).strip()
+            or "; ".join(_to_list(content.get("success_indicators")))
+        )
+        body_lines.append(f"Context: {context_condition}")
+        body_lines.append(f"Command: {command}")
+        body_lines.append(f"Expected: {expected}")
+    elif layer == "FACTUAL":
+        stable_lines: List[str] = []
+        facts = content.get("discovered_facts", [])
+        if isinstance(facts, list):
+            for fact in facts:
+                if not isinstance(fact, dict):
+                    continue
+                key = str(fact.get("key", "")).strip()
+                if key == "open_port":
+                    # 与 layer2 factual._is_semantic_fact 对齐：仅保留带 service/version 的端口事实。
+                    service = str(fact.get("service", "")).strip()
+                    version = str(fact.get("version", "")).strip()
+                    if not (service or version):
+                        continue
+                    value = str(fact.get("value", "")).strip()
+                    details: List[str] = []
+                    if value:
+                        details.append(value)
+                    if service:
+                        details.append(f"service={service}")
+                    if version:
+                        details.append(f"version={version}")
+                    stable_lines.append("open_port: " + " | ".join(details))
+                    continue
+                if key in {"http_status", "output_summary", "open_port_evidence"}:
+                    continue
+                value = str(fact.get("value", "")).strip()
+                if key and value:
+                    stable_lines.append(f"{key}: {value}")
 
-    elif layer in ("FACTUAL_RULE", "FACTUAL_LLM"):
-        rule_content = content.get("rule") or content.get("knowledge", "")
-        if rule_content:
-            lines.append(str(rule_content)[:500])
-        src = content.get("source") or content.get("reference", "")
-        if src:
-            lines.append(f"来源: {src}")
+        # LLM 来源 FACTUAL 可能没有 discovered_facts，这里补充稳定语义字段。
+        if not stable_lines:
+            svc = str(content.get("target_service", "")).strip()
+            ver = str(content.get("target_version", "")).strip()
+            status = str(content.get("exploitation_status", "")).strip()
+            if svc:
+                stable_lines.append(f"target_service: {svc}")
+            if ver and ver.lower() not in {"none", "null"}:
+                stable_lines.append(f"target_version: {ver}")
+            if status:
+                stable_lines.append(f"exploitation_status: {status}")
 
-    elif layer == "CONCEPTUAL":
-        concept = content.get("concept") or content.get("description", "")
-        if concept:
-            lines.append(str(concept)[:500])
+            cve_map = _collect_factual_cve_status(content)
+            for cve, cve_status in cve_map.items():
+                stable_lines.append(f"{cve}: {cve_status}")
 
+        body_lines.extend(stable_lines or ["(no stable facts)"])
+    elif layer in ("META_CONCEPTUAL", "CONCEPTUAL"):
+        body_lines.extend(_format_conceptual_body(content))
     elif layer == "METACOGNITIVE":
-        goal = content.get("session_goal", "")
-        lessons = content.get("key_lessons") or []
-        if goal:
-            lines.append(f"会话目标: {goal}")
-        if lessons:
-            lines.append("关键经验:")
-            for lesson in lessons[:5]:
-                lines.append(f"  - {lesson}")
-
+        body_lines.extend(_format_metacognitive_body(content))
     else:
-        # 通用序列化
-        for k, v in list(content.items())[:8]:
-            lines.append(f"  {k}: {str(v)[:200]}")
+        body_lines.append(str(content))
 
-    lines.append("")
+    hint_items: List[str] = [layer]
+    if target_service and target_service != "unknown":
+        hint_items.append(str(target_service))
+    hint_items.extend(cve_ids[:8])
+    hint_items = [h for h in hint_items if str(h).strip()]
 
-    # ── 适用约束 ─────────────────────────────────────────────────────────────
-    version_family = (
-        exp.get("version_family")
-        or constraints.get("version_family", "")
-    )
-    cond_kw = constraints.get("condition_keywords") or []
-    if any([target_svc, cve_ids, version_family, cond_kw]):
-        lines.append("=== 适用约束 ===")
-        if target_svc:
-            lines.append(f"  target_service: {target_svc}")
-        if cve_ids:
-            lines.append(f"  cve_ids: {cve_ids}")
-        if version_family:
-            lines.append(f"  version_family: {version_family}")
-        if cond_kw:
-            lines.append(f"  keywords: {cond_kw[:10]}")
-        lines.append("")
+    out: List[str] = []
+    out.extend(header_lines)
+    out.append("")
+    out.extend(body_lines)
+    out.append("")
+    out.append("QUERY_HINTS:")
+    for item in hint_items:
+        out.append(f"- {item}")
+    return "\n".join(out)
 
-    # ── 来源溯源 ─────────────────────────────────────────────────────────────
-    if source_ids or n_sessions > 1:
-        lines.append("=== 来源溯源 ===")
-        if source_ids:
-            lines.append(f"  source_exp_ids: {source_ids}")
-        lines.append(f"  n_independent_sessions: {n_sessions}")
-        lines.append("")
-
-    return "\n".join(lines)
+def format_exp_for_rag(exp: Dict[str, Any]) -> str:
+    """兼容旧调用：统一走新的成熟度可见 chunk 模板。"""
+    return format_chunk_for_ragflow(exp)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +359,8 @@ class RefluxResult:
     skipped_already:    int = 0
     failed:             int = 0
     deleted_conflicted: int = 0
+    uploaded_primary:   int = 0
+    uploaded_secondary: int = 0
     dry_run:            bool = False
     uploaded_ids:       List[str] = field(default_factory=list)
     failed_ids:         List[str] = field(default_factory=list)
@@ -225,6 +377,7 @@ class RefluxResult:
 def flush_reflux_ready_to_ragflow(
     klm_backend: "LocalKLMBackend",
     ragflow_client: "RAGFlowExpClient",
+    llm_client: Optional[Any] = None,
     dry_run: bool = False,
     commit: bool = True,
 ) -> RefluxResult:
@@ -258,7 +411,7 @@ def flush_reflux_ready_to_ragflow(
 
     for exp in candidates:
         exp_id = exp.get("exp_id", "UNKNOWN")
-        layer  = exp.get("knowledge_layer", "UNKNOWN")
+        layer  = _normalize_layer(str(exp.get("knowledge_layer", "UNKNOWN")))
 
         # 额外安全门：lifecycle 必须是 active
         if exp.get("lifecycle_status") != "active":
@@ -267,27 +420,62 @@ def flush_reflux_ready_to_ragflow(
             result.skipped_already += 1
             continue
 
+        content_text = format_chunk_for_ragflow(exp)
+        quality_issues = validate_document_for_retrieval(content_text, exp)
+        target_dataset, route = resolve_reflux_dataset_id(
+            ragflow_client=ragflow_client,
+            knowledge_layer=layer,
+            quality_issues=quality_issues,
+        )
+
         if dry_run:
-            logger.info("[reflux][dry-run] 模拟上传 %s [%s]", exp_id, layer)
+            logger.info(
+                "[reflux][dry-run] 模拟上传 %s [%s] route=%s issues=%d dataset=%s",
+                exp_id,
+                layer,
+                route,
+                len(quality_issues),
+                target_dataset,
+            )
             result.uploaded += 1
             result.uploaded_ids.append(exp_id)
+            if route == "secondary":
+                result.uploaded_secondary += 1
+            else:
+                result.uploaded_primary += 1
             continue
 
-        # 格式化
-        title        = f"[XPEC] {layer} {exp_id}"
-        content_text = format_exp_for_rag(exp)
-
+        title = f"[XPEC][{route.upper()}] {layer} {exp_id}"
         # 上传
         doc_id = ragflow_client.upload_exp(
             exp_id=exp_id,
             title=title,
             content_text=content_text,
+            dataset_id=target_dataset,
         )
         if doc_id:
+            klm_backend.update_fields(
+                exp_id,
+                reflux_bucket=route,
+                reflux_dataset_id=target_dataset,
+                retrieval_doc_quality_issues=quality_issues,
+                retrieval_doc_word_count=len(content_text.split()),
+            )
             klm_backend.mark_refluxed(exp_id, ragflow_doc_id=doc_id)
             result.uploaded += 1
             result.uploaded_ids.append(exp_id)
-            logger.info("[reflux] OK exp_id=%s doc_id=%s", exp_id, doc_id)
+            if route == "secondary":
+                result.uploaded_secondary += 1
+            else:
+                result.uploaded_primary += 1
+            logger.info(
+                "[reflux] OK exp_id=%s route=%s dataset=%s doc_id=%s issues=%s",
+                exp_id,
+                route,
+                target_dataset,
+                doc_id,
+                quality_issues[:3],
+            )
         else:
             result.failed += 1
             result.failed_ids.append(exp_id)
@@ -298,8 +486,13 @@ def flush_reflux_ready_to_ragflow(
         klm_backend.commit()
 
     logger.info(
-        "[reflux] 完成 candidates=%d uploaded=%d failed=%d skipped=%d",
-        result.total_candidates, result.uploaded, result.failed, result.skipped_already,
+        "[reflux] 完成 candidates=%d uploaded=%d(primary=%d secondary=%d) failed=%d skipped=%d",
+        result.total_candidates,
+        result.uploaded,
+        result.uploaded_primary,
+        result.uploaded_secondary,
+        result.failed,
+        result.skipped_already,
     )
     return result
 

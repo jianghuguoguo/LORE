@@ -1,6 +1,6 @@
-# Changelog
+﻿# Changelog
 
-All notable changes to RefPenTest will be documented in this file.
+All notable changes to LORE will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -10,24 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `run_full_pipeline.py` — 8 阶段全流程 CLI（Layer 0→1→2→3 Phase1+2→Phase3+4→Phase5→Layer4→Upload），末尾统一上传 RAGFlow
-- `refpentest.py` — 交互式主入口（菜单选择单阶段运行 / 状态查看 / 手动上传）
+- `run/run_full_pipeline.py` — 8 阶段全流程 CLI（Layer 0→1→2→3 Phase1+2→Phase3+4→Phase5→Layer4→Upload），末尾统一上传 RAGFlow
+- `lore.py` — 交互式主入口（菜单选择单阶段运行 / 状态查看 / 手动上传）
 - `crawlers/main_crawler.py` — 多源爬虫 CLI 迁入 `crawlers/` 包（原根目录版本保留为 shim）
 - `crawlers/sync_data_light.py` — 外部 KB 同步工具从 `scripts/` 迁入 `crawlers/`，与爬虫代码统一管理
 - `src/ragflow_uploader.py` — Layer 2 经验批量上传 RAGFlow，支持 `--session` 单 session 重传、`--dry-run` 预演
-- `run_layer4_gap_dispatch.py` — Layer 4 独立运行脚本，含 `LocalKLMBackend` 集成冲突检测
+- `run/run_layer4_gap_dispatch.py` — Layer 4 独立运行脚本，含 `LocalKLMBackend` 集成冲突检测
 - `CONTRIBUTING.md` — 贡献者指南（适配器开发 / 代码规范 / PR 流程）
 - `SECURITY.md` — 安全策略与负责任披露流程
 
 ### Changed
 - **Layer 2 不再在蒸馏阶段直接上传 RAGFlow**（固定 `--no-ragflow`），统一由 `upload` 阶段集中处理，避免重复条目
 - **`--no-ragflow`** 含义变更：原控制 Layer 2 上传 → 现控制末尾 upload 阶段是否跳过
-- `run_full_pipeline.py` 增加 `upload` 阶段（第 8 阶段），完整流水线为 7 个处理阶段 + 1 个上传阶段
+- `run/run_full_pipeline.py` 增加 `upload` 阶段（第 8 阶段），完整流水线为 7 个处理阶段 + 1 个上传阶段
+- 运行脚本统一收敛到 `run/`：`run_layer{1..4}_*.py` 与 `run_full_pipeline.py` 不再放在仓库根目录
+- Layer 3 融合阈值按知识层生效：`CONCEPTUAL >= 2`，其余层保持 `>= 3`
+- Layer 3 冲突判定明确为“矛盾度超过层级阈值且 maturity 非 consolidated”（`CONCEPTUAL/METACOGNITIVE=0.30`，其余层=0.60）
 - `src/log_adapter/` 保留为向后兼容 shim，规范位置为 `src/layer0/adapters/`
 
 ### Fixed
-- `run_layer1_llm_batch.py` 缺少 `layer1_output/` 目录自动创建，运行首次报 `FileNotFoundError`
-- `run_layer4_gap_dispatch.py` `ConflictDetector` 错误接收列表参数，改为正确使用 `LocalKLMBackend`
+- `run/run_layer1_llm_batch.py` 缺少 `layer1_output/` 目录自动创建，运行首次报 `FileNotFoundError`
+- `run/run_layer4_gap_dispatch.py` `ConflictDetector` 错误接收列表参数，改为正确使用 `LocalKLMBackend`
 - Layer 3 / Layer 4 在上游输出文件为空时崩溃，改为返回空列表 + WARNING 日志
 
 ---
@@ -60,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Phase 3: Rule Merge Engine (RME)
   - Phase 4: Bayesian Confidence Calibration (BCC)
   - Phase 5: Knowledge Lifecycle Management (KLM) — 写入 `phase5_klm_registry.jsonl`
-- `run_layer3_phase12.py` / `run_layer3_phase34.py` / `run_layer3_phase5.py` 独立运行脚本
+- `run/run_layer3_phase12.py` / `run/run_layer3_phase34.py` / `run/run_layer3_phase5.py` 独立运行脚本
 - Layer 3 冲突报告：`data/layer3_output/conflict_report.jsonl`（当前 55 条冲突）
 - KLM 知识节点类型：`CROSS_SESSION_RULE` / `ANTIPATTERN_DIGEST` / `KG_NODE`
 
@@ -82,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ExperienceBundle` 数据模型，支持 JSONL 持久化
 - **Layer 4**：缺口感知自适应爬取
   - `GapSignalAnalyzer`：7 类缺口维度（INT/INCOMPLETE_RECON/DEF/PATCHED 等）
-  - P0/P1 优先级调度，`queues/gap_queue.jsonl`
+  - P0/P1 优先级调度，`src/layer4/queues/gap_queue.jsonl`
 - **RAGFlow reflux**：`ragflow_uploader.py`，经验条目上传至向量数据库（经验库 / 完整语料库）
 - **Dashboard**：Flask Web UI，`http://localhost:5000`
   - 卡片视图：Layer 1 统计、Layer 2 统计、Layer 4 缺口分析、RAGFlow 上传状态
@@ -97,7 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/your-org/RefPenTest/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/your-org/RefPenTest/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/your-org/RefPenTest/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/your-org/RefPenTest/releases/tag/v0.1.0
+[Unreleased]: https://github.com/your-org/LORE/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/your-org/LORE/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/your-org/LORE/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/your-org/LORE/releases/tag/v0.1.0
+

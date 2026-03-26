@@ -40,9 +40,11 @@ import logging
 import math
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from .models import ConsolidatedExp, LifecycleStatus
+from .sec import canonical_service_or_empty, resolve_target_service
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +56,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 _DECAY_RATES: Dict[str, float] = {
-    "FACTUAL_RULE":     0.003,   # ~231 天半衰期（版本/服务信息，随补丁缓慢失效）
-    "FACTUAL_LLM":      0.003,
+    "FACTUAL":          0.003,   # ~231 天半衰期（版本/服务信息，随补丁缓慢失效）
     "PROCEDURAL_NEG":   0.005,   # ~139 天（CVE 利用路径，随补丁迭代）
     "PROCEDURAL_POS":   0.005,
     "METACOGNITIVE":    0.001,   # ~693 天（决策规则，极稳定）
@@ -130,7 +131,9 @@ def _compute_temporal_w(exp: Dict[str, Any], now: datetime) -> float:
     Returns:
         衰减后权重（float）
     """
-    layer      = exp.get("knowledge_layer", "FACTUAL_RULE")
+    layer      = exp.get("knowledge_layer", "FACTUAL")
+    if str(layer).startswith("FACTUAL_"):
+        layer = "FACTUAL"
     lam        = _DECAY_RATES.get(layer, _DECAY_DEFAULT)
 
     confidence = float(exp.get("confidence", 0.5))
@@ -168,6 +171,95 @@ def _get_source_exp_ids(ce: ConsolidatedExp) -> List[str]:
     return getattr(prov, "source_exp_ids", [])
 
 
+def _normalize_raw_target_service_fields(exp: Dict[str, Any]) -> str:
+    """规范化单条原始经验的 target_service，并回写 content/metadata 约束字段。"""
+    resolved = resolve_target_service(exp)
+
+    content = exp.get("content") if isinstance(exp.get("content"), dict) else {}
+    metadata = exp.get("metadata") if isinstance(exp.get("metadata"), dict) else {}
+    constraints = (
+        metadata.get("applicable_constraints")
+        if isinstance(metadata.get("applicable_constraints"), dict)
+        else {}
+    )
+
+    if resolved:
+        content["target_service"] = resolved
+        constraints["target_service"] = resolved
+    else:
+        # 对无法解析的占位值清空，避免 raw/validated/consolidated 等污染字段。
+        c_svc = str(content.get("target_service", ""))
+        m_svc = str(constraints.get("target_service", ""))
+        if c_svc and not canonical_service_or_empty(c_svc):
+            content["target_service"] = ""
+        if m_svc and not canonical_service_or_empty(m_svc):
+            constraints["target_service"] = ""
+
+    exp["content"] = content
+    metadata["applicable_constraints"] = constraints
+    exp["metadata"] = metadata
+    return resolved
+
+
+def _set_raw_target_service(exp: Dict[str, Any], service_name: str) -> None:
+    """将推断出的服务名回填到原始经验的标准字段位置。"""
+    if not service_name:
+        return
+    content = exp.get("content") if isinstance(exp.get("content"), dict) else {}
+    metadata = exp.get("metadata") if isinstance(exp.get("metadata"), dict) else {}
+    constraints = (
+        metadata.get("applicable_constraints")
+        if isinstance(metadata.get("applicable_constraints"), dict)
+        else {}
+    )
+    content["target_service"] = service_name
+    constraints["target_service"] = service_name
+    metadata["applicable_constraints"] = constraints
+    exp["content"] = content
+    exp["metadata"] = metadata
+
+
+def _normalize_consolidated_target_service(
+    ce: ConsolidatedExp,
+    source_exps: List[Dict[str, Any]],
+) -> str:
+    """规范化 consolidated 经验的 target_service，并在必要时从源经验回填。"""
+    content = ce.content if isinstance(ce.content, dict) else {}
+    metadata = ce.metadata if isinstance(ce.metadata, dict) else {}
+    constraints = (
+        metadata.get("applicable_constraints")
+        if isinstance(metadata.get("applicable_constraints"), dict)
+        else {}
+    )
+
+    merged_candidate = canonical_service_or_empty(str(constraints.get("target_service", "")))
+    if not merged_candidate:
+        merged_candidate = canonical_service_or_empty(str(content.get("target_service", "")))
+
+    if not merged_candidate and source_exps:
+        vote: Dict[str, float] = {}
+        for src in source_exps:
+            svc = resolve_target_service(src)
+            if svc:
+                vote[svc] = vote.get(svc, 0.0) + float(src.get("confidence", 0.5))
+        if vote:
+            merged_candidate = max(vote.items(), key=lambda kv: kv[1])[0]
+
+    if merged_candidate:
+        content["target_service"] = merged_candidate
+        constraints["target_service"] = merged_candidate
+    else:
+        if "target_service" in content and not canonical_service_or_empty(str(content.get("target_service", ""))):
+            content["target_service"] = ""
+        if "target_service" in constraints and not canonical_service_or_empty(str(constraints.get("target_service", ""))):
+            constraints["target_service"] = ""
+
+    ce.content = content
+    metadata["applicable_constraints"] = constraints
+    ce.metadata = metadata
+    return merged_candidate
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 5 核心入口：run_klm()
 # ─────────────────────────────────────────────────────────────────────────────
@@ -197,11 +289,31 @@ def run_klm(
     working: Dict[str, Dict[str, Any]] = copy.deepcopy(exp_map)
 
     # 向后兼容：确保每条原始经验都有 lifecycle_status / merged_into 字段
+    session_service_votes: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for exp in working.values():
         if "lifecycle_status" not in exp:
             exp["lifecycle_status"] = "active"
         if "merged_into" not in exp:
             exp["merged_into"] = None
+        resolved = _normalize_raw_target_service_fields(exp)
+        session_id = str(exp.get("metadata", {}).get("source_session_id", "")).strip()
+        if resolved and session_id:
+            session_service_votes[session_id][resolved] += float(exp.get("confidence", 0.5))
+
+    # 会话级回填：同一 session 内，若部分经验未识别服务名，回填该 session 的主导服务。
+    for exp in working.values():
+        session_id = str(exp.get("metadata", {}).get("source_session_id", "")).strip()
+        if not session_id:
+            continue
+        current = resolve_target_service(exp)
+        if current:
+            continue
+        vote = session_service_votes.get(session_id, {})
+        if not vote:
+            continue
+        inferred = max(vote.items(), key=lambda kv: kv[1])[0]
+        if inferred:
+            _set_raw_target_service(exp, inferred)
 
     # 追踪结构
     lifecycle_updates: Dict[str, str]       = {}
@@ -222,6 +334,9 @@ def run_klm(
         ce_layer   = ce.knowledge_layer
         ce_status  = ce.lifecycle_status
         source_ids = _get_source_exp_ids(ce)
+
+        source_exps = [working[sid] for sid in source_ids if sid in working]
+        _normalize_consolidated_target_service(ce, source_exps)
 
         # should_reflux ≡ (maturity=="consolidated" and lifecycle_status=="active")
         # ConsolidatedExp 无独立的 should_reflux 字段，由此两条件直接推断
@@ -266,10 +381,14 @@ def run_klm(
 
         elif ce_status == "conflicted":
             # ── 操作 2：冲突标记 ─────────────────────────────────────────
+            contra_threshold = (
+                0.30 if ce_layer in ("METACOGNITIVE", "CONCEPTUAL") else 0.60
+            )
             conflict_entry: Dict[str, Any] = {
                 "consolidated_exp_id": ce_id,
                 "knowledge_layer":     ce_layer,
                 "contradiction_score": round(ce.contradiction_score, 4),
+                "conflict_threshold":  round(contra_threshold, 2),
                 "p_fused":             round(ce.p_fused, 4),
                 "n_independent":       ce.n_independent_sessions,
                 "source_exp_ids":      source_ids,
@@ -279,8 +398,9 @@ def run_klm(
                     else "MEDIUM_PRIORITY_REVIEW"
                 ),
                 "note": (
-                    f"P_fused={ce.p_fused:.4f} 超过置信度阈值，但 "
-                    f"contradiction_score={ce.contradiction_score:.3f} 阻止成熟度升级；"
+                    f"P_fused={ce.p_fused:.4f}，"
+                    f"contradiction_score={ce.contradiction_score:.3f} 超过该层冲突阈值"
+                    f"({contra_threshold:.2f})，阻止成熟度升级；"
                     f"需要人工核验冲突原因（可能是版本差异或环境差异导致的条件化矛盾）"
                 ),
             }

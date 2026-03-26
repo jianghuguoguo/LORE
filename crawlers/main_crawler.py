@@ -1,9 +1,9 @@
-"""
+﻿"""
 crawlers/main_crawler.py
 ========================
 多源爬虫系统 — 主入口（交互式 / 命令行双模式）
 
-使用方法（从 RefPenTest/ 根目录运行）:
+使用方法（从 LORE/ 根目录运行）:
     python crawlers/main_crawler.py              # 交互式选择数据源
     python crawlers/main_crawler.py --all        # 爬取所有数据源
     python crawlers/main_crawler.py --sources csdn,github -q CVE-2024-23897
@@ -20,9 +20,9 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-# 确保 RefPenTest/ 与 crawlers/ 均在 sys.path，支持 package 与直接执行两种方式
+# 确保 LORE/ 与 crawlers/ 均在 sys.path，支持 package 与直接执行两种方式
 _HERE = Path(__file__).parent          # crawlers/
-_ROOT = _HERE.parent                   # RefPenTest/
+_ROOT = _HERE.parent                   # LORE/
 for _p in [str(_ROOT), str(_HERE)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -113,7 +113,7 @@ def main():
     """主函数 — 交互式 / 命令行双模式爬虫入口"""
 
     parser = argparse.ArgumentParser(
-        description="RefPenTest 多源爬虫系统",
+        description="LORE 多源爬虫系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
@@ -163,7 +163,7 @@ def main():
         return
 
     print("\n" + "="*80)
-    print("RefPenTest — 多源爬虫系统")
+    print("LORE — 多源爬虫系统")
     print("="*80)
     print(f"已注册爬虫: {', '.join(available_sources)}")
     print("="*80)
@@ -266,3 +266,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

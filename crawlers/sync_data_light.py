@@ -1,11 +1,11 @@
-"""
+﻿"""
 crawlers/sync_data_light.py
 ===========================
 外部安全知识库同步工具
 
 支持 11 个外部安全数据库的一键同步，结果保存到 raw_data/
 
-用法（从 RefPenTest/ 根目录运行）:
+用法（从 LORE/ 根目录运行）:
     python crawlers/sync_data_light.py                      # 全部同步
     python crawlers/sync_data_light.py --repos attack        # 只同步 ATT&CK
     python crawlers/sync_data_light.py --repos cisa-kev,cwe # 指定仓库
@@ -23,7 +23,7 @@ import tempfile
 from pathlib import Path
 
 # 路径配置（基于脚本位置自动定位项目根目录）
-_ROOT         = Path(__file__).parent.parent   # RefPenTest/
+_ROOT         = Path(__file__).parent.parent   # LORE/
 RAW_DATA_DIR  = _ROOT / "raw_data"
 PROCESSED_DIR = _ROOT / "processed_data"
 
@@ -293,3 +293,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     repos_list = [r.strip() for r in args.repos.split(",")] if args.repos else None
     main(repos_filter=repos_list)
+

@@ -1,0 +1,104 @@
+# LORE Design Configuration
+# =============================================================
+# 目的：存放由项目维护者管理的“设计级参数”，例如语义映射、
+# 解析规则、阶段默认行为与调度策略。
+#
+# 说明：
+# 1) 此文件应纳入版本控制，由开发团队统一维护。
+# 2) 不应放置密钥、API Token、账号口令等敏感信息。
+# 3) 用户部署相关必填项（LLM/RAGflow API 与知识库 ID）请放到 config.yaml。
+
+# ─────────────────────────────────────────────────────────────
+# 1. Layer0 工具分类规则
+# ─────────────────────────────────────────────────────────────
+tool_categories:
+  # 识别为 RAG_QUERY 的工具名
+  rag_tool_names:
+    - make_kb_search
+
+  # 识别为 CODE_WRITE 的工具名
+  code_execute_tool_names:
+    - execute_code
+
+  # 识别为 GENERIC_COMMAND_CALL 的工具名
+  generic_command_tool_names:
+    - generic_linux_command
+
+  # 未命中的工具自动归入 STRUCTURED_TOOL_CALL
+
+# ─────────────────────────────────────────────────────────────
+# 2. Layer0 RAG 上下文窗口
+# ─────────────────────────────────────────────────────────────
+rag_context:
+  # has_rag_context=true 的回看窗口（Turn 数）
+  window_turns: 3
+
+# ─────────────────────────────────────────────────────────────
+# 3. Layer0 日志与输入输出默认
+# ─────────────────────────────────────────────────────────────
+logging:
+  # 相对于项目根目录
+  log_dir: "../logs"
+  output_dir: "../data/processed"
+  log_glob: "cai_*.jsonl"
+
+# ─────────────────────────────────────────────────────────────
+# 4. Layer0 解析行为
+# ─────────────────────────────────────────────────────────────
+parser:
+  api_request_marker: "UNKNOWN"
+  completion_object_value: "chat.completion"
+
+  # role=tool 的 content 外层格式：
+  # - text_wrapper: {"type":"text","text":"<inner_json>"}
+  # - direct:       直接 JSON
+  tool_result_content_type: "text_wrapper"
+
+  target_extraction:
+    event_types: ["user_message"]
+    max_scan_lines: 10
+    target_keywords: ["渗透测试目标", "target", "Target", "http://", "https://", "IP:", "ip:"]
+
+# ─────────────────────────────────────────────────────────────
+# 5. Layer0 输出结构
+# ─────────────────────────────────────────────────────────────
+output:
+  format: "jsonl"
+  include_raw_records: false
+  flatten_events: false
+  filename_template: "layer0_{session_id}.jsonl"
+
+# ─────────────────────────────────────────────────────────────
+# 6. Layer3 设计参数
+# ─────────────────────────────────────────────────────────────
+layer3:
+  # SEC 别名词典路径（相对项目根目录）
+  sec_aliases_file: "configs/sec_aliases.json"
+
+# ─────────────────────────────────────────────────────────────
+# 7. Layer4 设计参数
+# ─────────────────────────────────────────────────────────────
+layer4:
+  enabled: true
+
+  crawler:
+    sources: [csdn, github, xianzhi, qianxin]
+    max_pages: 3
+    min_quality_score: 0.3
+    max_docs_per_gap: 5
+
+  p0_immediate: true
+
+  schedule:
+    daily_hour: 2
+    weekly_day: "mon"
+    weekly_hour: 3
+
+  # 留空表示使用默认目录 src/layer4/queues
+  queue:
+    dir: ""
+
+  # quality_issues 命中时可写入次级库
+  reflux:
+    secondary_dataset_id: ""
+    secondary_dataset_id_env: "RAGFLOW_SECONDARY_DATASET_ID"

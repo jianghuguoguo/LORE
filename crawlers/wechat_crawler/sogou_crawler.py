@@ -1,4 +1,4 @@
-"""
+﻿"""
 sogou_crawler.py — 微信公众号文章直接爬取脚本
 ==============================================
 通过搜狗微信搜索接口获取文章 URL，再直接下载全文。
@@ -31,7 +31,7 @@ from bs4 import BeautifulSoup
 
 # ── 路径 ─────────────────────────────────────────────────────────────────────
 _HERE = Path(__file__).parent                       # crawlers/wechat_crawler/
-_ROOT = _HERE.parent.parent                         # RefPenTest/
+_ROOT = _HERE.parent.parent                         # LORE/
 SAVE_DIR = _ROOT / 'raw_data' / 'wechat'
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -618,3 +618,4 @@ if __name__ == '__main__':
                 print('[提示] 运行 python run_discovery.py --auto-add 可自动追加到 seed_accounts.yaml')
         except Exception as e:
             log.warning(f'[通道B] 自动触发失败（不影响爬取结果）: {e}')
+

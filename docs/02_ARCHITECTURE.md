@@ -1,18 +1,18 @@
-# RefPenTest · 系统架构
+﻿# LORE · 系统架构
 
-> 文档版本：v0.5.0 · 更新日期：2026-03-01
+> 文档版本：v0.5.0 · 更新日期：2026-03-18
 
 ---
 
 ## 1. 整体架构
 
-RefPenTest 采用纵向分层 + 横向模块化设计，五层流水线负责知识蒸馏，横向功能模块（爬虫、Dashboard、外部 KB 同步）为流水线提供数据输入与可视化管理。
+LORE 采用纵向分层 + 横向模块化设计，五层流水线负责知识蒸馏，横向功能模块（爬虫、Dashboard、外部 KB 同步）为流水线提供数据输入与可视化管理。
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │                       用户接口层                                      │
 │  Web Dashboard (dashboard/app.py · Flask · localhost:5000)           │
-│  CLI (run_full_pipeline.py · refpentest.py · crawlers/main_crawler.py) │
+│  CLI (run/run_full_pipeline.py · lore.py · crawlers/main_crawler.py) │
 └──────────────────────────────────────────────────────────────────────┘
                                 │
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -25,7 +25,7 @@ RefPenTest 采用纵向分层 + 横向模块化设计，五层流水线负责知
 ┌──────────────────────────────────────────────────────────────────────┐
 │                    数据 · 知识层                                       │
 │  data/layer{0-4}_output/  ·  RAGFlow 向量库 (8.140.33.83)             │
-│  queues/gap_queue.jsonl   ·  raw_data/ (爬虫 + 外部 KB)               │
+│  src/layer4/queues/gap_queue.jsonl · raw_data/ (爬虫 + 外部 KB)       │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -34,7 +34,7 @@ RefPenTest 采用纵向分层 + 横向模块化设计，五层流水线负责知
 ## 2. 目录结构
 
 ```
-RefPenTest/
+LORE/
 ├── src/                           # 核心业务逻辑
 │   ├── layer0/                    # 格式适配 + 日志标准化
 │   │   ├── log_adapter.py         #   AdapterRegistry · LogAdapter 抽象基类
@@ -80,8 +80,15 @@ RefPenTest/
 │   ├── templates/index.html       #   单页 SPA
 │   └── static/                    #   CSS / JS
 │
-├── scripts/                       # 轻量运行脚本
-│   └── run_layer0.py              #   Layer 0 命令行入口（由 run_full_pipeline.py 调用）
+├── run/                           # 轻量运行脚本
+│   ├── run_full_pipeline.py       #   全流程 CLI（Layer 0 → Upload）
+│   ├── run_layer0.py              #   Layer 0 命令行入口
+│   ├── run_layer1_llm_batch.py    #   Layer 1 批处理入口
+│   ├── run_layer2_analysis.py     #   Layer 2 入口
+│   ├── run_layer3_phase12.py      #   Layer 3 Phase 1+2
+│   ├── run_layer3_phase34.py      #   Layer 3 Phase 3+4
+│   ├── run_layer3_phase5.py       #   Layer 3 Phase 5
+│   └── run_layer4_gap_dispatch.py #   Layer 4 入口
 │
 ├── configs/
 │   └── config.yaml                # 全局配置（LLM / RAGFlow / Layer 4）
@@ -98,7 +105,7 @@ RefPenTest/
 │   └── layer4_output/
 │       └── gap_dispatch_summary.json
 │
-├── queues/
+├── src/layer4/queues/
 │   └── gap_queue.jsonl            # Layer 4 缺口信号优先级队列
 │
 ├── raw_data/                      # 所有原始语料
@@ -108,14 +115,7 @@ RefPenTest/
 │
 ├── logs/                          # 原始渗透测试会话日志（.jsonl）
 │
-├── run_full_pipeline.py           # 全流程 CLI（Layer 0 → Upload）
-├── refpentest.py                  # 交互式主入口
-├── run_layer1_llm_batch.py        # Layer 1 批处理入口
-├── run_layer2_analysis.py         # Layer 2 入口
-├── run_layer3_phase12.py          # Layer 3 Phase 1+2
-├── run_layer3_phase34.py          # Layer 3 Phase 3+4
-├── run_layer3_phase5.py           # Layer 3 Phase 5
-├── run_layer4_gap_dispatch.py     # Layer 4 入口
+├── lore.py                  # 交互式主入口
 ├── main_crawler.py                # 向后兼容 shim → crawlers/main_crawler.py
 ├── crawl_wechat.py                # 向后兼容 shim → crawlers/wechat_crawler/
 ├── scheduler.py                   # 定时任务统一入口
@@ -137,7 +137,7 @@ RefPenTest/
 
 `AdapterRegistry.auto_detect()` 自动嗅探日志格式，输出统一的 `CanonicalAgentTurn` 序列。
 
-**入口**：`scripts/run_layer0.py`（由 `run_full_pipeline.py` 自动调用）
+**入口**：`run/run_layer0.py`（由 `run/run_full_pipeline.py` 自动调用）
 
 ---
 
@@ -157,7 +157,7 @@ RefPenTest/
 | `rag_adoption` | 是否使用了 RAG 检索结果 |
 
 **当前数据量**：15 sessions · 415 事件 · 171 次失败  
-**入口**：`run_layer1_llm_batch.py`
+**入口**：`run/run_layer1_llm_batch.py`
 
 ---
 
@@ -175,7 +175,7 @@ RefPenTest/
 | `CONCEPTUAL` | 技术原理 + 工具用法 |
 
 **当前产出**：172 条经验  
-**入口**：`run_layer2_analysis.py`（固定 `--no-ragflow`，蒸馏阶段不上传）
+**入口**：`run/run_layer2_analysis.py`（固定 `--no-ragflow`，蒸馏阶段不上传）
 
 ---
 
@@ -183,9 +183,15 @@ RefPenTest/
 
 | Phase | 脚本 | 功能 | 输出 |
 |:------|:----|:----|:----|
-| 1+2 | `run_layer3_phase12.py` | SEC 等价集聚类 + EWC 证据权重 | `phase12_result.jsonl` |
-| 3+4 | `run_layer3_phase34.py` | RME 融合引擎 + BCC 贝叶斯校准 | `phase34_consolidated.jsonl` |
-| 5   | `run_layer3_phase5.py`  | KLM 生命周期注册 | `phase5_klm_registry.jsonl` |
+| 1+2 | `run/run_layer3_phase12.py` | SEC 等价集聚类 + EWC 证据权重 | `phase12_result.jsonl` |
+| 3+4 | `run/run_layer3_phase34.py` | RME 融合引擎 + BCC 贝叶斯校准 | `phase34_consolidated.jsonl` |
+| 5   | `run/run_layer3_phase5.py`  | KLM 生命周期注册 | `phase5_klm_registry.jsonl` |
+
+融合与冲突判定规则：
+
+- 融合阈值按知识层生效：`CONCEPTUAL >= 2`，其他层保持 `>= 3`。
+- `conflicted` 仅在“矛盾度超过层级阈值且 maturity 非 consolidated”时标记。
+- 层级冲突阈值：`CONCEPTUAL/METACOGNITIVE = 0.30`，其他层为 `0.60`。
 
 **当前产出**：137 条 KLM · 6 条 reflux-ready · 55 条冲突已标记
 
@@ -209,7 +215,7 @@ CrawlWorker → CrawlerManager → csdn/github/qianxin/xianzhi
   → raw_data/layer4/
 ```
 
-**入口**：`run_layer4_gap_dispatch.py`
+**入口**：`run/run_layer4_gap_dispatch.py`
 
 ---
 
@@ -272,7 +278,7 @@ RAGFlow 经验库 (http://8.140.33.83)
 
 **上传规则**：
 - `RAG_EVALUATION` 层排除（无检索价值）
-- `run_full_pipeline.py` 末尾统一执行 `upload` 阶段
+- `run/run_full_pipeline.py` 末尾统一执行 `upload` 阶段
 - `--no-ragflow` 跳过末尾上传（离线调试用，不影响蒸馏）
 
 手动重新上传：
@@ -299,7 +305,7 @@ data/layer0_output/
 data/layer1_output/
     │                    │
     ▼ Layer 2            ▼ Layer 4 GapQueue
-data/layer2_output/   queues/gap_queue.jsonl
+data/layer2_output/   src/layer4/queues/gap_queue.jsonl
     │                         │
     ▼ Layer 3 XPEC            ▼ CrawlWorker
 data/layer3_output/        raw_data/layer4/
@@ -322,7 +328,7 @@ RAGFlow 经验库（153 条已上传）
 ## 8. 测试
 
 ```bash
-cd RefPenTest
+cd LORE
 python -m pytest tests/ -v   # 276 个用例
 ```
 
@@ -330,4 +336,5 @@ python -m pytest tests/ -v   # 276 个用例
 
 ---
 
-**文档版本**：v0.5.0 · **最后更新**：2026-03-01
+**文档版本**：v0.5.0 · **最后更新**：2026-03-18
+

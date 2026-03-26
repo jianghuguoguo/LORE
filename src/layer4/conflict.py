@@ -1,4 +1,4 @@
-# src/layer4/conflict.py
+﻿# src/layer4/conflict.py
 """
 冲突检测与清理模块（Layer 4 核心）。
 
@@ -26,7 +26,7 @@ Reports:
   - data/layer3_output/conflict_report.jsonl  逐条审计日志
   - data/layer3_output/conflict_summary.json  本次运行统计
 
-参考：RefPenTest · Layer 4 技术方案.md §9
+参考：LORE · Layer 4 技术方案.md §9
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # 路径常量（与 gap_queue.py 保持一致）
 # ─────────────────────────────────────────────────────────────────────────────
-_PROJECT_ROOT = Path(__file__).parent.parent.parent  # RefPenTest/
+_PROJECT_ROOT = Path(__file__).parent.parent.parent  # LORE/
 _LAYER3_DIR = _PROJECT_ROOT / "data" / "layer3_output"
 
 KLM_REGISTRY_FILE  = _LAYER3_DIR / "phase5_klm_registry.jsonl"
@@ -68,7 +68,7 @@ RULE_CONFLICT_THRESHOLD = 0.50   # 高于此值直接 CONFLICT，无需 LLM
 # 其他层说明：
 #   CONCEPTUAL      → 描述「成功/失败条件」，NEG 是在证实其边界，非冲突，应触发条件强化
 #   METACOGNITIVE   → 决策规则，不是对某技术的推荐
-#   FACTUAL_*       → 事实描述/CVE上下文，不是操作建议
+#   FACTUAL         → 事实描述/CVE上下文，不是操作建议
 #   RAG_EVALUATION  → 对知识库的评价，不是操作建议
 #   PROCEDURAL_NEG  → NEG vs NEG 无意义
 CONFLICT_TARGET_LAYERS = frozenset(["PROCEDURAL_POS"])
@@ -223,10 +223,12 @@ class LocalKLMBackend:
     def iter_all_active_pos(self) -> Iterator[Dict[str, Any]]:
         """迭代所有 active/conflicted PROCEDURAL_POS 和 CONCEPTUAL 条目（CVE 废弃检测用）。"""
         self._ensure_loaded()
-        target_layers = {"PROCEDURAL_POS", "CONCEPTUAL", "FACTUAL_LLM"}
+        target_layers = {"PROCEDURAL_POS", "CONCEPTUAL", "FACTUAL"}
         target_statuses = {"active", "conflicted"}
         for entry in self._entries + self._consolidated:
-            if entry.get("knowledge_layer") in target_layers:
+            layer = entry.get("knowledge_layer")
+            layer = "FACTUAL" if str(layer).startswith("FACTUAL_") else layer
+            if layer in target_layers:
                 if entry.get("lifecycle_status") in target_statuses:
                     yield entry
 
@@ -1197,7 +1199,7 @@ def _entry_to_searchable_text(entry: Dict[str, Any]) -> str:
         for lesson in content.get("key_lessons", [])[:5]:
             parts.append(str(lesson)[:100])
 
-        # FACTUAL_LLM / CONCEPTUAL
+        # FACTUAL / CONCEPTUAL
         core = content.get("core_insight", "")
         if core:
             parts.append(str(core)[:200])
@@ -1217,3 +1219,4 @@ def _count_by_key(items: List[Dict[str, Any]], key: str) -> Dict[str, int]:
         v = item.get(key, "unknown")
         counts[v] = counts.get(v, 0) + 1
     return counts
+

@@ -286,7 +286,11 @@ class LogParser:
                 if not raw:
                     continue
                 try:
-                    yield json.loads(raw)
+                    obj = json.loads(raw)
+                    if isinstance(obj, dict):
+                        yield obj
+                    else:
+                        logger.debug("Skip non-object JSON at line %d in %s", lineno, path.name)
                 except json.JSONDecodeError as exc:
                     logger.warning("JSON parse error at line %d: %s", lineno, exc)
 

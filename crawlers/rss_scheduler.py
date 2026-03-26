@@ -1,4 +1,4 @@
-"""
+﻿"""
 crawlers/rss_scheduler.py — RSS Feed 定时调度器
 ================================================
 使用 APScheduler 定期拉取所有已配置 RSS Feed 的新内容。
@@ -29,7 +29,7 @@ from pathlib import Path
 
 # 确保项目根目录在 sys.path
 _HERE = Path(__file__).parent        # crawlers/
-_ROOT = _HERE.parent                 # RefPenTest/
+_ROOT = _HERE.parent                 # LORE/
 for _p in (str(_ROOT), str(_HERE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -179,3 +179,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

@@ -18,14 +18,16 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse as _urlparse
 
 from .models import GapSignal, GapPriority
+from ..utils.config_loader import get_config
 
 logger = logging.getLogger(__name__)
 
-# 队列文件默认存放在项目根下的 queues/ 目录
-# 可通过环境变量 LAYER4_QUEUE_DIR 覆盖
-import os as _os
-_DEFAULT_QUEUE_DIR = Path(__file__).parent.parent.parent / "queues"  # RefPenTest/queues/
-QUEUE_DIR = Path(_os.environ.get("LAYER4_QUEUE_DIR", str(_DEFAULT_QUEUE_DIR)))
+# 队列文件默认存放在 src/layer4/queues/ 目录，支持统一配置覆盖。
+_DEFAULT_QUEUE_DIR = Path(__file__).resolve().parent / "queues"
+try:
+    QUEUE_DIR = Path(get_config().layer4_queue_dir)
+except Exception:
+    QUEUE_DIR = _DEFAULT_QUEUE_DIR
 
 GAP_QUEUE_FILE = QUEUE_DIR / "gap_queue.jsonl"
 

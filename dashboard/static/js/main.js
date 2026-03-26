@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   RefPenTest Dashboard — main.js
+  LORE Dashboard — main.js
    ═══════════════════════════════════════════════════════════ */
 
 /* ── Page routing ─────────────────────────────────────────── */
@@ -1687,8 +1687,7 @@ function renderConsolidatedGrid () {
 const LAYER_BADGE_CLASS = {
   PROCEDURAL_NEG: 'lbadge-neg',
   PROCEDURAL_POS: 'lbadge-pos',
-  FACTUAL_RULE:   'lbadge-frule',
-  FACTUAL_LLM:    'lbadge-fllm',
+  FACTUAL:        'lbadge-frule',
   METACOGNITIVE:  'lbadge-meta',
   CONCEPTUAL:     'lbadge-conc',
   RAG_EVALUATION: 'lbadge-rag',
@@ -1696,8 +1695,7 @@ const LAYER_BADGE_CLASS = {
 const LAYER_SHORT = {
   PROCEDURAL_NEG: 'NEG',
   PROCEDURAL_POS: 'POS',
-  FACTUAL_RULE:   'FACTUAL_RULE',
-  FACTUAL_LLM:    'FACTUAL_LLM',
+  FACTUAL:        'FACTUAL',
   METACOGNITIVE:  'META',
   CONCEPTUAL:     'CONCEPTUAL',
   RAG_EVALUATION: 'RAG_EVAL',
@@ -1772,14 +1770,11 @@ function renderConsContent (item) {
       ${suc ? '<div class="cons-content-section"><div class="cons-content-label">成功指标</div><div class="cons-tag-list">' + suc + '</div></div>' : ''}`;
   }
 
-  if (layer === 'FACTUAL_RULE') {
+  if (layer === 'FACTUAL') {
+    const sourceHint = d.factual_source ? `<div class="cons-content-label">来源: ${esc(String(d.factual_source).toUpperCase())}</div>` : '';
     const rows = (d.facts || []).slice(0,6).map(f =>
       `<div class="cons-fact-row"><span class="cons-fact-key">${esc(f.key)}</span><span class="cons-fact-val">${esc(String(f.value||''))}</span><span class="cons-fact-cnt">×${f.count||1}</span></div>`
     ).join('');
-    return rows ? `<div class="cons-content-section"><div class="cons-content-label">关键事实</div>${rows}</div>` : '';
-  }
-
-  if (layer === 'FACTUAL_LLM') {
     const cveTags = (d.cve_map || []).slice(0,6).map(c => {
       const cls = (c.status||'').toLowerCase().includes('confirmed') ? 'cve-confirmed' : '';
       return `<span class="cons-tag ctag-cve ${cls}" title="${esc(c.status)} conf=${c.conf}">${esc(c.cve)}</span>`;
@@ -1788,6 +1783,8 @@ function renderConsContent (item) {
       `<span class="cons-tag ctag-cve cve-unexplored">${esc(c)}</span>`
     ).join('');
     return `
+      ${sourceHint ? '<div class="cons-content-section">' + sourceHint + '</div>' : ''}
+      ${rows ? '<div class="cons-content-section"><div class="cons-content-label">关键事实</div>' + rows + '</div>' : ''}
       ${cveTags ? '<div class="cons-content-section"><div class="cons-content-label">CVE 利用情况</div><div class="cons-tag-list">' + cveTags + '</div></div>' : ''}
       ${unexplored ? '<div class="cons-content-section"><div class="cons-content-label">待探索 CVE</div><div class="cons-tag-list">' + unexplored + '</div></div>' : ''}`;
   }

@@ -45,6 +45,7 @@ _ALL_PHASES_FACTUAL = _RECON_PHASES | {
     "EXPLOITATION", "ESCALATION", "LATERAL_MOVEMENT", "EXFILTRATION", "COMMAND_CONTROL"
 }
 _SUCCESS_OUTCOMES = {"success", "partial_success"}
+_RECON_FACTUAL_OUTCOMES = {"success", "partial_success", "uncertain"}
 
 # Nmap: "PORT   STATE   SERVICE   VERSION"
 # [^\ S\n]+ 仅匹配水平空白，完全排除 \n 跨行捕获
@@ -93,6 +94,25 @@ _RE_SERVICE_VERSION = re.compile(
     r'\b([A-Za-z][A-Za-z0-9_\-]{2,25})/(\d+[\d.]{1,15})\b'
 )
 
+_PROTO_PRODUCT_BLACKLIST = frozenset([
+    "HTTP", "HTTPS", "TCP", "UDP", "SSL", "TLS", "IP", "FTP", "SSH",
+    "SMTP", "DNS", "RPC", "PORT", "SERVICE", "PROTO", "PROTOCOL",
+])
+
+
+# P4: 事实质量门控，降低“纯端口/状态码瞬态”条目占比
+_HIGH_VALUE_FACT_KEYS = {
+    "cve_confirmed", "cve_mentioned", "service_version", "nikto_finding", "smb_share",
+    "http_header_server", "http_header_x-powered-by", "http_header_x-generator",
+    "privilege_root", "shell_root", "flag_captured", "suid_binary",
+    "file_shadow", "file_passwd", "file_read_passwd", "file_read_shadow",
+    "auth_bypass", "sudo_nopasswd",
+}
+_TRANSIENT_FACT_KEYS = {
+    "http_status", "open_port_evidence", "output_summary",
+    "accessible_path", "url_found",
+}
+
 
 # 低价值 output_summary 过滤器（F-2）
 # 滤掉纯噪声数据，如纯 HTTP 状态码、Nmap 启动行、本地网卡信息等
@@ -122,7 +142,7 @@ _OS_NOISE_PATTERNS = [
     re.compile(r'^\.[a-zA-Z][\w-]*\s*[\{>]'),                 # CSS 选择器（.class { 或 .class >）
     re.compile(r'^[0-9a-f]{30,}$', re.IGNORECASE),           # 纯十六进制 dump
     re.compile(r'^(true|false|null|None|ok|yes|no|undefined)$', re.IGNORECASE),  # 布尔/空值
-    re.compile(r'^\./\w'),                                     # 相对路径片段（./data, ./tmp 等）
+    re.compile(r'^\./[\w./-]+$'),                              # 仅过滤纯相对路径片段（保留 ./exploit.py --target）
     re.compile(r'^-[a-zA-Z]\s'),                               # CLI flag 残留（-e admin, -v 等）
     re.compile(r'^Trying\s+(password|credential|login)', re.IGNORECASE),  # 暴力破解进度
     # F-2 Round-3: CSS 元素选择器 + 裸 HTTP 状态行
@@ -160,6 +180,41 @@ def _is_low_value_summary(value: str) -> bool:
     if len(stripped) > 50 and stripped.count('<') > 3 and stripped.count('>') > 3:
         return True
     return False
+
+
+def _is_semantic_fact(fact: Dict[str, Any]) -> bool:
+    """判断单条 fact 是否属于可复用的语义证据。"""
+    key = str(fact.get("key", "")).strip()
+    if key == "open_port":
+        # open_port 只有在带 service/version 时才视为语义证据。
+        service = str(fact.get("service", "")).strip()
+        version = str(fact.get("version", "")).strip()
+        return bool(service or version)
+    return key in _HIGH_VALUE_FACT_KEYS
+
+
+def _prune_transient_findings(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """保留语义事实，纯瞬态条目不单独入库。"""
+    semantic: List[Dict[str, Any]] = []
+    transient: List[Dict[str, Any]] = []
+
+    for fact in findings:
+        key = str(fact.get("key", "")).strip()
+        if _is_semantic_fact(fact):
+            semantic.append(fact)
+        elif key in _TRANSIENT_FACT_KEYS:
+            transient.append(fact)
+        else:
+            # 未在分类表中的键：默认保留（向后兼容），便于后续审计归类。
+            semantic.append(fact)
+
+    if not semantic:
+        return []
+
+    # 在存在语义事实时最多保留1条瞬态证据作为上下文。
+    if transient:
+        semantic.append(transient[0])
+    return semantic
 
 
 def _get_raw_output(event: AnnotatedEvent) -> str:
@@ -208,7 +263,7 @@ def _parse_http_findings(output: str, command: str) -> List[Dict[str, str]]:
     # HTTP 状态行（每种状态码只记录一次）
     for m in _RE_HTTP_STATUS.finditer(output):
         status = m.group(1)
-        if status in ("200", "301", "302", "401", "403") and status not in seen_statuses:
+        if status in ("200", "301", "302", "401", "403", "404", "500") and status not in seen_statuses:
             seen_statuses.add(status)
             findings.append({"key": "http_status", "value": status})
 
@@ -270,18 +325,26 @@ def _parse_generic_findings(output: str, tool_name: str) -> List[Dict[str, str]]
     #           SHA/hash 路径 (abc123/v1.2)、系统路径 (/usr/bin/...)
     _OS_NAMES = frozenset(["ubuntu", "debian", "centos", "fedora", "alpine",
                            "windows", "macos", "kali", "arch", "mint"])
-    for m in re.finditer(r'\b([A-Za-z][A-Za-z0-9_\-]{2,25})/(\d+[\d.]{1,15})\b', output):
-        product = m.group(1).lower()
+    for m in _RE_SERVICE_VERSION.finditer(output):
+        product_raw = m.group(1)
+        product = product_raw.lower()
         version = m.group(2)
         # 过滤：OS 名称、哈希前缀（全小写十六进制）、过短版本号误匹配
         if product in _OS_NAMES:
             continue
         if re.fullmatch(r'[0-9a-f]{6,}', product):  # 纯十六进制——是哈希非产品名
             continue
-        # 排除 HTTP 协议版本字符串：HTTP/1.0、HTTP/1.1、HTTP/2
-        if product.upper() in ('HTTP', 'HTTPS'):
+        # 排除协议/端口类前缀：HTTP/1.1、TCP/8983、Port/8080、ssl/443 等
+        if product_raw.upper() in _PROTO_PRODUCT_BLACKLIST:
             continue
-        # 排除 CIDR 子网掘码：/8 /16 /24 /32 /48 /64 /96 /128
+        # 排除纯端口号误识别：如 TCP/8983、Port/8080（单整数版本号）
+        try:
+            port_val = int(version.split('.')[0])
+            if 1 <= port_val <= 65535 and '.' not in version:
+                continue
+        except ValueError:
+            pass
+        # 排除 CIDR 子网掩码：/8 /16 /24 /32 /48 /64 /96 /128
         try:
             if int(version) in (8, 16, 24, 32, 48, 64, 96, 128):
                 continue
@@ -481,6 +544,7 @@ def _make_factual_exp(
     target_raw: Optional[str],
     bar_score: float = 0.0,  # unused, retained for backward compat
     session_outcome_str: str = "unknown",
+    confidence: float = 0.75,
 ) -> Experience:
     """构造单条 FACTUAL 经验条目。"""
     tool_name = event.base.call.tool_name
@@ -501,7 +565,7 @@ def _make_factual_exp(
         ),
         "tool_name": tool_name,
         "attack_phase": attack_phase,
-        # F-1: 添加 cve_ids；target_service 由 pipeline.py Step 1.5 后通过 FACTUAL_LLM 结果回填
+        # F-1: 添加 cve_ids；target_service 由 pipeline.py Step 1.5 的 FACTUAL(LLM来源)结果回填
         "cve_ids": fact_cve_ids,
         "target_service": "",   # 占位符，将由 pipeline 回填 LLM 识别的软件名
     }
@@ -529,7 +593,7 @@ def _make_factual_exp(
         content=content,
         metadata=metadata,
         maturity=ExperienceMaturity.RAW,
-        confidence=0.75,
+        confidence=confidence,
     )
 
 
@@ -563,7 +627,7 @@ def extract_factual_experiences(
     seen_kv_global: set = set()
 
     # 定义各阶段的 outcome 门限：
-    #   RECON/ENV：success / partial_success 均可
+    #   RECON/ENV：success / partial_success / uncertain 均可（uncertain 仅保留结构化证据）
     #   EXPLOITATION 等：仅 success（避免纯失败事件误报高价值信号）
     _EXPLOIT_PHASES = _ALL_PHASES_FACTUAL - _RECON_PHASES
 
@@ -577,7 +641,7 @@ def extract_factual_experiences(
 
         # outcome 门限：RECON 允许 partial_success；EXPLOITATION 仅 success
         if phase in _RECON_PHASES:
-            if outcome not in _SUCCESS_OUTCOMES:
+            if outcome not in _RECON_FACTUAL_OUTCOMES:
                 continue
         else:
             if outcome != "success":
@@ -633,7 +697,9 @@ def extract_factual_experiences(
             if _kv not in seen_kv_global:
                 seen_kv_global.add(_kv)
                 deduped_findings.append(_f)
-        findings = deduped_findings
+
+        # P4: 仅保留可复用语义事实；纯瞬态证据不单独入库。
+        findings = _prune_transient_findings(deduped_findings)
         if not findings:
             continue
 
@@ -657,6 +723,11 @@ def extract_factual_experiences(
             raw_evidence=raw_output,
             target_raw=target_raw,
             session_outcome_str=session_outcome_str,
+            confidence=(
+                0.62 if outcome == "uncertain"
+                else 0.72 if outcome == "partial_success"
+                else 0.75
+            ),
         )
 
         # 会话内去重

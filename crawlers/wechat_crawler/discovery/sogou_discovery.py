@@ -1,4 +1,4 @@
-"""
+﻿"""
 discovery/sogou_discovery.py — 搜狗微信搜索驱动的公众号发现
 =============================================================
 通过搜狗微信搜索（weixin.sogou.com）自动发现与渗透测试领域相关的优质公众号。
@@ -35,7 +35,7 @@ except ImportError:
 import sys as _sys
 from pathlib import Path as _Path
 _WC = _Path(__file__).parent.parent          # crawlers/wechat_crawler/
-_RT = _WC.parent.parent                      # RefPenTest/
+_RT = _WC.parent.parent                      # LORE/
 for _p in (str(_RT), str(_WC)):
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
@@ -237,3 +237,4 @@ class SogouAccountDiscovery:
             self._session.close()
         except Exception:
             pass
+

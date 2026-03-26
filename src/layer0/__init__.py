@@ -1,5 +1,5 @@
-"""
-RefPenTest Layer 0 包
+﻿"""
+LORE Layer 0 包
 ======================
 Layer 0：日志标准化层（含格式适配子层）
 
@@ -39,3 +39,4 @@ __all__ = [
     "RagQueryInfo",
     "adapters",
 ]
+

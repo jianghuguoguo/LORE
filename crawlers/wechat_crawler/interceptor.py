@@ -1,4 +1,4 @@
-"""
+﻿"""
 wechat_article_crawler/interceptor.py
 ======================================
 mitmproxy 流量拦截插件（"大脑"）
@@ -37,7 +37,7 @@ from mitmproxy import http
 
 # ── 路径配置（interceptor 在 mitmproxy 进程中运行，需要自己定位配置）────
 _HERE = Path(__file__).parent
-sys.path.insert(0, str(_HERE.parent.parent))  # RefPenTest/ 入 sys.path，使 crawlers.* 可导入
+sys.path.insert(0, str(_HERE.parent.parent))  # LORE/ 入 sys.path，使 crawlers.* 可导入
 sys.path.insert(0, str(_HERE))               # wechat_article_crawler/ 自身，用于直接 import config
 
 from config import MITM_CONFIG  # 直接从同目录导入，避免触发 crawlers/__init__.py 的连锁导入
@@ -451,3 +451,4 @@ class WeChatInterceptor:
 
 # ── mitmproxy addon 入口（必须）────────────────────────────────────────────
 addons = [WeChatInterceptor()]
+

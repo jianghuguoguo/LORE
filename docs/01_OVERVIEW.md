@@ -1,14 +1,14 @@
-﻿# RefPenTest · 项目概述
+﻿# LORE · 项目概述
 
 ## 项目简介
 
-**RefPenTest**（Reflective Penetration Testing）是一个面向渗透测试场景的多层级知识蒸馏与自适应补全系统。系统以真实渗透测试会话日志为原始输入，通过 **五层流水线**（Layer 0–4）自动提炼五类结构化经验，并创新性地引入 **Layer 4 缺口感知机制**——持续分析 Layer 1 失败标注，向知识盲区自动触发定向爬取，形成 **"发现缺口 → 补充知识 → 提升 Agent 能力"** 的闭环。
+**LORE**（Reflective Penetration Testing）是一个面向渗透测试场景的多层级知识蒸馏与自适应补全系统。系统以真实渗透测试会话日志为原始输入，通过 **五层流水线**（Layer 0–4）自动提炼五类结构化经验，并创新性地引入 **Layer 4 缺口感知机制**——持续分析 Layer 1 失败标注，向知识盲区自动触发定向爬取，形成 **"发现缺口 → 补充知识 → 提升 Agent 能力"** 的闭环。
 
 蒸馏产生的高置信知识条目（KLM）可通过 **RAGFlow reflux** 同步至向量数据库（`http://8.140.33.83`），直接服务于下游 RAG 检索，无需人工干预。
 
 ### 核心定位
 
-不同于传统数据库或知识图谱，RefPenTest 关注的是**从实际攻防对抗过程中提炼可复用的操作经验**：成功的漏洞利用步骤、导致失败的错误模式、高层次的决策规则，以及背景性概念知识。这些知识均由 LLM 和规则引擎从真实会话日志中自动抽取，经 Layer 3 XPEC 跨会话融合后注册为 KLM 知识条目，并可 reflux 至 RAGFlow 向量数据库。
+不同于传统数据库或知识图谱，LORE 关注的是**从实际攻防对抗过程中提炼可复用的操作经验**：成功的漏洞利用步骤、导致失败的错误模式、高层次的决策规则，以及背景性概念知识。这些知识均由 LLM 和规则引擎从真实会话日志中自动抽取，经 Layer 3 XPEC 跨会话融合后注册为 KLM 知识条目，并可 reflux 至 RAGFlow 向量数据库。
 
 ---
 
@@ -40,9 +40,9 @@ Layer 3 是知识蒸馏的最终收口，执行五个连续阶段：
 
 | Phase | 脚本 | 功能 |
 |:------|:----|:----|
-| Phase 1+2 | `run_layer3_phase12.py` | SEC 等价集聚类：将不同会话的相似失败模式归并，生成初级规则 |
-| Phase 3+4 | `run_layer3_phase34.py` | RME 融合：冲突检测与消解，输出 `conflict_report.jsonl` |
-| Phase 5   | `run_layer3_phase5.py`  | KLM 注册：写入 `phase5_klm_registry.jsonl`（当前 136 条，55 条存在冲突）|
+| Phase 1+2 | `run/run_layer3_phase12.py` | SEC 等价集聚类：将不同会话的相似失败模式归并，生成初级规则 |
+| Phase 3+4 | `run/run_layer3_phase34.py` | RME 融合：冲突检测与消解，输出 `conflict_report.jsonl` |
+| Phase 5   | `run/run_layer3_phase5.py`  | KLM 注册：写入 `phase5_klm_registry.jsonl` |
 
 三类 KLM 知识节点：
 
@@ -51,6 +51,12 @@ Layer 3 是知识蒸馏的最终收口，执行五个连续阶段：
 | `CROSS_SESSION_RULE` | 多场景反复命中的决策规律，如 `RECON_BEFORE_EXPLOIT` |
 | `ANTIPATTERN_DIGEST` | 高频失败根因聚合，辅助规避已知陷阱 |
 | `KG_NODE` | 技战术级别的原子知识，供 RAG 精准召回 |
+
+当前融合与冲突判定规则：
+
+- 融合阈值按知识层生效：`CONCEPTUAL >= 2`，其余层保持 `>= 3`。
+- `conflicted` 仅在“矛盾度超过层级阈值且 maturity 非 consolidated”时成立。
+- 矛盾阈值分层：`CONCEPTUAL/METACOGNITIVE = 0.30`，其他层为 `0.60`。
 
 ### 4. Layer 4 缺口感知自适应爬取
 
@@ -70,7 +76,7 @@ Layer 3 是知识蒸馏的最终收口，执行五个连续阶段：
 
 ### 5. RAGFlow Reflux
 
-Layer 3 高置信 KLM 条目通过 `src/ragflow/ragflow_uploader.py` 回流至 RAGFlow 向量数据库，当前已 reflux 6 条（`refluxed=True`），可被 RAG Agent 直接检索。
+Layer 3 高置信 KLM 条目通过 `src/ragflow_uploader.py` 回流至 RAGFlow 向量数据库，可被 RAG Agent 直接检索。
 
 ### 6. 双轨数据采集
 
@@ -104,7 +110,7 @@ Layer 3 高置信 KLM 条目通过 `src/ragflow/ragflow_uploader.py` 回流至 R
 | LLM 客户端 | 自研 `src/llm_client.py`（支持 DeepSeek / OpenAI / Kimi / 通义千问） |
 | 知识数据模型 | Pydantic dataclass（`src/models.py`） |
 | XPEC 融合 | `src/layer3/`（SEC 聚类 + RME 融合 + KLM 注册） |
-| RAGFlow 回流 | `src/ragflow/ragflow_uploader.py` |
+| RAGFlow 回流 | `src/ragflow_uploader.py` |
 | 测试框架 | pytest（276 个测试用例，位于 `tests/`） |
 
 ### 数据采集
@@ -169,5 +175,6 @@ Layer 3 高置信 KLM 条目通过 `src/ragflow/ragflow_uploader.py` 回流至 R
 ---
 
 **版本**: v0.5.0
-**最后更新**: 2026年2月
+**最后更新**: 2026年3月18日
 **状态**: Active Development
+

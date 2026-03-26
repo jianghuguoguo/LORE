@@ -1,17 +1,26 @@
-"""
-RefPenTest 全局配置加载器
+﻿"""
+LORE 全局配置加载器
 ===========================
-统一从 configs/config.yaml 加载配置，提供强类型化的配置访问接口。
-支持环境变量覆盖（前缀 REFPENTEST_）以适应 CI/CD 环境。
+统一配置分层加载策略：
+- 设计配置：configs/design.yaml（项目规则、语义映射、默认行为）
+- 用户配置：configs/config.yaml（LLM/RAGflow API 与知识库 ID 等必填项）
+
+最终配置 = 代码内兜底默认值 + design.yaml + config.yaml + 环境变量覆盖。
+支持关键运行时环境变量覆盖，以适应 CI/CD 与容器部署场景。
 """
 
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+
+
+_DEFAULT_DESIGN_CONFIG_REL = Path("configs/design.yaml")
+_DEFAULT_USER_CONFIG_REL = Path("configs/config.yaml")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +59,60 @@ _DEFAULTS: Dict[str, Any] = {
         "flatten_events": False,
         "filename_template": "layer0_{session_id}.jsonl",
     },
+    "llm": {
+        "provider": "generic",
+        "model": "deepseek-chat",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "LLM_API_KEY",
+        "api_key_literal": "",
+        "temperature": 0.0,
+        "max_tokens": 2048,
+        "max_retries": 3,
+        "retry_delay": 2.0,
+        "timeout": 60,
+    },
+    "ragflow": {
+        "base_url": "http://127.0.0.1:9380",
+        "base_url_env": "RAGFLOW_BASE_URL",
+        "api_key_env": "RAGFLOW_API_KEY",
+        "api_key_literal": "",
+        "request_timeout": 60,
+        "retry_times": 2,
+        "datasets": {
+            "experience": "",
+            "factual": "",
+            "procedural_pos": "",
+            "procedural_neg": "",
+            "metacognitive": "",
+            "full": "",
+            "secondary": "",
+        },
+    },
+    "layer3": {
+        "sec_aliases_file": "configs/sec_aliases.json",
+    },
+    "layer4": {
+        "enabled": True,
+        "crawler": {
+            "sources": ["csdn", "github", "xianzhi", "qianxin"],
+            "max_pages": 3,
+            "min_quality_score": 0.3,
+            "max_docs_per_gap": 5,
+        },
+        "p0_immediate": True,
+        "schedule": {
+            "daily_hour": 2,
+            "weekly_day": "mon",
+            "weekly_hour": 3,
+        },
+        "queue": {
+            "dir": "",
+        },
+        "reflux": {
+            "secondary_dataset_id": "",
+            "secondary_dataset_id_env": "RAGFLOW_SECONDARY_DATASET_ID",
+        },
+    },
 }
 
 
@@ -64,24 +127,120 @@ def _deep_merge(base: Dict, override: Dict) -> Dict:
     return result
 
 
+def _to_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _abs_path(project_root: Path, raw_path: str) -> Path:
+    p = Path(raw_path)
+    if p.is_absolute():
+        return p
+    return (project_root / p).resolve()
+
+
+def _apply_env_overrides(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """将关键环境变量覆盖到配置对象。"""
+    out = deepcopy(raw)
+
+    ragflow = out.setdefault("ragflow", {})
+    if not isinstance(ragflow, dict):
+        ragflow = {}
+        out["ragflow"] = ragflow
+    datasets = ragflow.setdefault("datasets", {})
+    if not isinstance(datasets, dict):
+        datasets = {}
+        ragflow["datasets"] = datasets
+
+    base_url_env = _to_str(ragflow.get("base_url_env") or "RAGFLOW_BASE_URL")
+    api_key_env = _to_str(ragflow.get("api_key_env") or "RAGFLOW_API_KEY")
+
+    env_base_url = _to_str(os.environ.get(base_url_env, ""))
+    if env_base_url:
+        ragflow["base_url"] = env_base_url
+
+    env_api_key = _to_str(os.environ.get(api_key_env, ""))
+    if env_api_key:
+        ragflow["api_key_literal"] = env_api_key
+
+    layer4 = out.setdefault("layer4", {})
+    if not isinstance(layer4, dict):
+        layer4 = {}
+        out["layer4"] = layer4
+
+    queue_cfg = layer4.setdefault("queue", {})
+    if not isinstance(queue_cfg, dict):
+        queue_cfg = {}
+        layer4["queue"] = queue_cfg
+
+    queue_dir_env = _to_str(os.environ.get("LAYER4_QUEUE_DIR", ""))
+    if queue_dir_env:
+        queue_cfg["dir"] = queue_dir_env
+
+    reflux_cfg = layer4.setdefault("reflux", {})
+    if not isinstance(reflux_cfg, dict):
+        reflux_cfg = {}
+        layer4["reflux"] = reflux_cfg
+
+    secondary_env_key = _to_str(
+        reflux_cfg.get("secondary_dataset_id_env") or "RAGFLOW_SECONDARY_DATASET_ID"
+    )
+    secondary_dataset = _to_str(os.environ.get(secondary_env_key, ""))
+    if secondary_dataset:
+        reflux_cfg["secondary_dataset_id"] = secondary_dataset
+
+    return out
+
+
+def _load_yaml_mapping(path: Path) -> Dict[str, Any]:
+    """读取 YAML 文件并确保顶层为字典；缺失文件返回空字典。"""
+    if not path.exists():
+        return {}
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"配置文件顶层必须是对象映射: {path}")
+    return data
+
+
 class Config:
     """强类型配置访问器，封装 YAML 配置文件的读取与访问。"""
 
     def __init__(self, config_path: Optional[Path] = None):
-        raw = dict(_DEFAULTS)
+        raw = deepcopy(_DEFAULTS)
+        self._project_root = Path(__file__).resolve().parent.parent.parent
+        self._design_config_path = (self._project_root / _DEFAULT_DESIGN_CONFIG_REL).resolve()
 
-        # 加载 YAML 文件
+        # 用户配置文件（可由调用方指定）
         if config_path is None:
-            # 默认搜索路径：项目根目录下的 configs/config.yaml
-            project_root = Path(__file__).parent.parent.parent
-            config_path = project_root / "configs" / "config.yaml"
+            config_path = self._project_root / _DEFAULT_USER_CONFIG_REL
 
-        if config_path.exists():
-            with open(config_path, encoding="utf-8") as f:
-                file_cfg = yaml.safe_load(f) or {}
-            raw = _deep_merge(raw, file_cfg)
+        self._config_path = Path(config_path).resolve()
 
-        self._cfg = raw
+        # 1) 先加载 design.yaml（项目设计层默认）
+        raw = _deep_merge(raw, _load_yaml_mapping(self._design_config_path))
+
+        # 2) 再加载 config.yaml（用户部署层覆盖）
+        raw = _deep_merge(raw, _load_yaml_mapping(self._config_path))
+
+        self._cfg = _apply_env_overrides(raw)
+
+    @property
+    def project_root(self) -> Path:
+        return self._project_root
+
+    @property
+    def design_config_path(self) -> Path:
+        return self._design_config_path
+
+    @property
+    def config_path(self) -> Path:
+        return self._config_path
+
+    @property
+    def raw_dict(self) -> Dict[str, Any]:
+        return deepcopy(self._cfg)
 
     # ── tool_categories ──────────────────────────────────────────────────────
 
@@ -153,6 +312,74 @@ class Config:
     def output_filename_template(self) -> str:
         return self._cfg["output"]["filename_template"]
 
+    # ── llm ───────────────────────────────────────────────────────────────────
+
+    @property
+    def llm_config(self) -> Dict[str, Any]:
+        llm = self._cfg.get("llm", {})
+        if not isinstance(llm, dict):
+            return {}
+        return deepcopy(llm)
+
+    # ── ragflow ───────────────────────────────────────────────────────────────
+
+    @property
+    def ragflow_config(self) -> Dict[str, str]:
+        ragflow = self._cfg.get("ragflow", {})
+        datasets = ragflow.get("datasets", {}) if isinstance(ragflow, dict) else {}
+        if not isinstance(datasets, dict):
+            datasets = {}
+
+        return {
+            "base_url": _to_str(ragflow.get("base_url") if isinstance(ragflow, dict) else ""),
+            "api_key": _to_str(ragflow.get("api_key_literal") if isinstance(ragflow, dict) else ""),
+            "request_timeout": _to_str(ragflow.get("request_timeout") if isinstance(ragflow, dict) else 60),
+            "retry_times": _to_str(ragflow.get("retry_times") if isinstance(ragflow, dict) else 2),
+            "experience_dataset": _to_str(datasets.get("experience")),
+            "dataset_factual": _to_str(datasets.get("factual")),
+            "dataset_procedural_pos": _to_str(datasets.get("procedural_pos")),
+            "dataset_procedural_neg": _to_str(datasets.get("procedural_neg")),
+            "dataset_metacognitive": _to_str(datasets.get("metacognitive")),
+            "full_dataset": _to_str(datasets.get("full")),
+            "secondary_dataset": _to_str(datasets.get("secondary")),
+        }
+
+    # ── layer3 ────────────────────────────────────────────────────────────────
+
+    @property
+    def sec_aliases_path(self) -> Path:
+        layer3 = self._cfg.get("layer3", {})
+        raw_path = "configs/sec_aliases.json"
+        if isinstance(layer3, dict):
+            raw_path = _to_str(layer3.get("sec_aliases_file") or raw_path)
+        return _abs_path(self.project_root, raw_path)
+
+    # ── layer4 ────────────────────────────────────────────────────────────────
+
+    @property
+    def layer4_config(self) -> Dict[str, Any]:
+        layer4 = self._cfg.get("layer4", {})
+        if not isinstance(layer4, dict):
+            return {}
+        return deepcopy(layer4)
+
+    @property
+    def layer4_queue_dir(self) -> Path:
+        layer4 = self._cfg.get("layer4", {})
+        queue = layer4.get("queue", {}) if isinstance(layer4, dict) else {}
+        raw_dir = _to_str(queue.get("dir")) if isinstance(queue, dict) else ""
+        if raw_dir:
+            return _abs_path(self.project_root, raw_dir)
+        return self.project_root / "src" / "layer4" / "queues"
+
+    @property
+    def layer4_secondary_dataset_id(self) -> str:
+        layer4 = self._cfg.get("layer4", {})
+        reflux = layer4.get("reflux", {}) if isinstance(layer4, dict) else {}
+        if not isinstance(reflux, dict):
+            return ""
+        return _to_str(reflux.get("secondary_dataset_id"))
+
     # ── 辅助方法 ──────────────────────────────────────────────────────────────
 
     def classify_tool(self, tool_name: str) -> str:
@@ -176,3 +403,4 @@ def get_config(config_path: Optional[Path] = None) -> Config:
     if _config_instance is None or config_path is not None:
         _config_instance = Config(config_path)
     return _config_instance
+

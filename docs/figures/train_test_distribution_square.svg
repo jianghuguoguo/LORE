@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" role="img" aria-labelledby="title desc">
+  <title id="title">训练集与测试集分布图</title>
+  <desc id="desc">正方形科研图，展示年份覆盖范围与难度分布均衡性。</desc>
+
+  <defs>
+    <style>
+      .zh { font-family: 'SimSun', 'Songti SC', serif; font-size: 8pt; fill: #0f172a; }
+      .en { font-family: 'Times New Roman', Times, serif; font-size: 8pt; fill: #1f2937; }
+      .grid { stroke: #d7deea; stroke-width: 1; }
+      .axis { stroke: #64748b; stroke-width: 1.6; }
+    </style>
+  </defs>
+
+  <rect x="80" y="118" width="1040" height="500" rx="20" fill="none" stroke="#d8e0ec"/>
+  <rect x="80" y="648" width="1040" height="500" rx="20" fill="none" stroke="#d8e0ec"/>
+
+  <text x="120" y="170" class="zh">一、年份覆盖对比</text>
+  <rect x="824" y="142" width="20" height="12" rx="3" fill="#2c7fb8"/>
+  <text x="852" y="152" class="zh">训练集（<tspan class="en">n=10</tspan>）</text>
+  <rect x="964" y="142" width="20" height="12" rx="3" fill="#f28e2b"/>
+  <text x="992" y="152" class="zh">测试集（<tspan class="en">n=10</tspan>）</text>
+
+  <line x1="160" y1="550" x2="1060" y2="550" class="axis"/>
+  <line x1="160" y1="250" x2="160" y2="550" class="axis"/>
+
+  <line x1="160" y1="550" x2="1060" y2="550" class="grid"/>
+  <line x1="160" y1="450" x2="1060" y2="450" class="grid"/>
+  <line x1="160" y1="350" x2="1060" y2="350" class="grid"/>
+  <line x1="160" y1="250" x2="1060" y2="250" class="grid"/>
+
+  <text x="145" y="554" text-anchor="end" class="en">0</text>
+  <text x="145" y="454" text-anchor="end" class="en">1</text>
+  <text x="145" y="354" text-anchor="end" class="en">2</text>
+  <text x="145" y="254" text-anchor="end" class="en">3</text>
+
+  <rect x="166" y="450" width="30" height="100" rx="5" fill="#2c7fb8"/>
+  <rect x="204" y="550" width="30" height="0" rx="5" fill="#f28e2b"/>
+
+  <rect x="271" y="550" width="30" height="0" rx="5" fill="#2c7fb8"/>
+  <rect x="309" y="450" width="30" height="100" rx="5" fill="#f28e2b"/>
+
+  <rect x="376" y="450" width="30" height="100" rx="5" fill="#2c7fb8"/>
+  <rect x="414" y="350" width="30" height="200" rx="5" fill="#f28e2b"/>
+
+  <rect x="481" y="450" width="30" height="100" rx="5" fill="#2c7fb8"/>
+  <rect x="519" y="450" width="30" height="100" rx="5" fill="#f28e2b"/>
+
+  <rect x="586" y="250" width="30" height="300" rx="5" fill="#2c7fb8"/>
+  <rect x="624" y="250" width="30" height="300" rx="5" fill="#f28e2b"/>
+
+  <rect x="691" y="350" width="30" height="200" rx="5" fill="#2c7fb8"/>
+  <rect x="729" y="450" width="30" height="100" rx="5" fill="#f28e2b"/>
+
+  <rect x="796" y="350" width="30" height="200" rx="5" fill="#2c7fb8"/>
+  <rect x="834" y="450" width="30" height="100" rx="5" fill="#f28e2b"/>
+
+  <rect x="901" y="550" width="30" height="0" rx="5" fill="#2c7fb8"/>
+  <rect x="939" y="450" width="30" height="100" rx="5" fill="#f28e2b"/>
+
+  <text x="200" y="579" text-anchor="middle" class="en">2017</text>
+  <text x="305" y="579" text-anchor="middle" class="en">2018</text>
+  <text x="410" y="579" text-anchor="middle" class="en">2019</text>
+  <text x="515" y="579" text-anchor="middle" class="en">2020</text>
+  <text x="620" y="579" text-anchor="middle" class="en">2021</text>
+  <text x="725" y="579" text-anchor="middle" class="en">2022</text>
+  <text x="830" y="579" text-anchor="middle" class="en">2023</text>
+  <text x="935" y="579" text-anchor="middle" class="en">2024</text>
+
+  <text x="610" y="607" text-anchor="middle" class="zh">年份</text>
+  <text x="98" y="400" transform="rotate(-90 98 400)" text-anchor="middle" class="zh">数量</text>
+
+  <rect x="170" y="200" width="320" height="40" rx="10" fill="#edf5ff" stroke="#bfd6f2"/>
+  <text x="330" y="225" text-anchor="middle" class="zh">覆盖范围：<tspan class="en">2017-2024, 8</tspan>年</text>
+
+  <text x="120" y="700" class="zh">二、难度分布对比</text>
+
+  <line x1="160" y1="1040" x2="1060" y2="1040" class="axis"/>
+  <line x1="160" y1="760" x2="160" y2="1040" class="axis"/>
+
+  <line x1="160" y1="1040" x2="1060" y2="1040" class="grid"/>
+  <line x1="160" y1="970" x2="1060" y2="970" class="grid"/>
+  <line x1="160" y1="900" x2="1060" y2="900" class="grid"/>
+  <line x1="160" y1="830" x2="1060" y2="830" class="grid"/>
+  <line x1="160" y1="760" x2="1060" y2="760" class="grid"/>
+
+  <text x="145" y="1044" text-anchor="end" class="en">0</text>
+  <text x="145" y="974" text-anchor="end" class="en">1</text>
+  <text x="145" y="904" text-anchor="end" class="en">2</text>
+  <text x="145" y="834" text-anchor="end" class="en">3</text>
+  <text x="145" y="764" text-anchor="end" class="en">4</text>
+
+  <rect x="261" y="760" width="52" height="280" rx="6" fill="#2c7fb8"/>
+  <rect x="327" y="760" width="52" height="280" rx="6" fill="#f28e2b"/>
+
+  <rect x="561" y="760" width="52" height="280" rx="6" fill="#2c7fb8"/>
+  <rect x="627" y="760" width="52" height="280" rx="6" fill="#f28e2b"/>
+
+  <rect x="861" y="900" width="52" height="140" rx="6" fill="#2c7fb8"/>
+  <rect x="927" y="900" width="52" height="140" rx="6" fill="#f28e2b"/>
+
+  <text x="320" y="1072" text-anchor="middle" class="en">easy</text>
+  <text x="620" y="1072" text-anchor="middle" class="en">medium</text>
+  <text x="920" y="1072" text-anchor="middle" class="en">hard</text>
+
+  <text x="610" y="1110" text-anchor="middle" class="zh">难度级别</text>
+  <text x="98" y="900" transform="rotate(-90 98 900)" text-anchor="middle" class="zh">数量</text>
+
+  <rect x="670" y="682" width="432" height="74" rx="12" fill="#fff6eb" stroke="#f5cc9b"/>
+  <text x="690" y="709" class="zh">训练集占比：<tspan class="en">easy 40%, medium 40%, hard 20%</tspan></text>
+  <text x="690" y="734" class="zh">测试集占比：<tspan class="en">easy 40%, medium 40%, hard 20%</tspan></text>
+</svg>

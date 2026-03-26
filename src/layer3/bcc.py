@@ -32,7 +32,7 @@ import logging
 import math
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .models import (
     BccResult,
@@ -83,7 +83,14 @@ def _estimate_correlation(
 
 
 def _count_independent_sessions(wes: WeightedEquivalenceSet) -> int:
-    """统计等价集内的独立 session 数量（不同 source_session_id 的数量）。"""
+    """统计等价集内的独立 session 数量（优先使用 metadata.source_sessions 聚合字段）。"""
+    # 优先读取 SEC 注入的 source_sessions 字段
+    for we in wes.weighted_exps:
+        ss = we.exp.get("metadata", {}).get("source_sessions", [])
+        if ss and isinstance(ss, list):
+            return len(ss)
+
+    # 兜底：从各经验的 source_session_id 动态生成
     session_ids = set()
     for we in wes.weighted_exps:
         sid = we.exp.get("metadata", {}).get("source_session_id", "")
@@ -200,6 +207,13 @@ def _decide_maturity(
         else _CONTRA_MAX
     )
 
+    # 问题 4 修正：对于具备 3 个独立 session 证据的样本，
+    # 允许 p_fused ≥ 0.75 即可进入 consolidated，
+    # 以容忍 EWC 权重归一化带来的累积数值偏差。
+    threshold_consolidated = _P_CONSOLIDATED
+    if n_independent >= 3:
+        threshold_consolidated = 0.75
+
     # ── 降级检查（优先，有强反例则先降级）──────────────────────────────
     if dominant_maturity == "consolidated" and n_strong_counterex >= 2:
         return (
@@ -223,11 +237,11 @@ def _decide_maturity(
         )
 
     if dominant_maturity == "validated":
-        if (p_fused >= _P_CONSOLIDATED
+        if (p_fused >= threshold_consolidated
                 and n_independent >= _N_CONSOLIDATED
                 and contradiction_score <= effective_contra_max):
             reason = (
-                f"P_fused={p_fused:.3f}≥{_P_CONSOLIDATED}, "
+                f"P_fused={p_fused:.3f}≥{threshold_consolidated}, "
                 f"n_independent={n_independent}≥{_N_CONSOLIDATED}, "
                 f"contra={contradiction_score:.3f}≤{effective_contra_max}"
                 + (f"（{knowledge_layer}层专用阈值）"
@@ -370,11 +384,21 @@ def build_consolidated_exp(
     now_iso = datetime.now(tz=timezone.utc).isoformat()
     exp_id  = _make_consolidated_exp_id(merge_result.cluster_id)
 
+    def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
+        seen = set()
+        out: List[str] = []
+        for item in items:
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            out.append(item)
+        return out
+
     # 收集所有源 session IDs（完整版）
-    source_sessions_full = list(dict.fromkeys(
+    source_sessions_full = _dedupe_preserve_order(
         we.exp.get("metadata", {}).get("source_session_id", "")
         for we in wes.weighted_exps
-    ))
+    )
 
     # 收集所有源 event IDs（汇总）
     source_event_ids: List[str] = []
@@ -382,12 +406,15 @@ def build_consolidated_exp(
         source_event_ids.extend(
             we.exp.get("metadata", {}).get("source_event_ids", [])
         )
+    source_event_ids = _dedupe_preserve_order(source_event_ids)
+
+    source_exp_ids = _dedupe_preserve_order(we.exp_id for we in wes.weighted_exps)
 
     metadata = {
         "source_session_id":    "consolidated",
         "source_sessions":      source_sessions_full,
         "source_event_ids":     source_event_ids,
-        "source_exp_ids":       [we.exp_id for we in wes.weighted_exps],
+        "source_exp_ids":       source_exp_ids,
         "extraction_source":    "xpec_rme_v1.2",
         "session_outcome":      _infer_outcome(wes),
         "created_at":           now_iso,

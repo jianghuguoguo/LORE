@@ -1,5 +1,5 @@
-"""
-RefPenTest Layer 3 数据模型
+﻿"""
+LORE Layer 3 数据模型
 ===========================
 定义 XPEC 融合框架各阶段的输入/输出数据结构。
 
@@ -45,6 +45,14 @@ class Maturity(str, Enum):
     CONSOLIDATED = "consolidated"
 
 
+def _fusion_threshold_for_layer(knowledge_layer: str) -> int:
+    """返回指定知识层触发 RME 融合所需的最小经验数。"""
+    layer = str(knowledge_layer).upper()
+    if layer == "CONCEPTUAL":
+        return 2
+    return 3
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 1 — SEC 输出：等价集（EquivalenceSet）
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,7 +72,7 @@ class EquivalenceSet:
         experiences        : 完整经验 dict 列表（直接来自 Layer2 JSONL）
         trigger_level      : 触发匹配的最高层级（"L1" / "L1+L2" / "L1+L2+L4"）
         has_conflict       : 等价集内是否检测到互相矛盾的经验
-        meets_fusion_threshold : 是否满足融合触发条件（≥3 条，Phase 3 RME 入口）
+        meets_fusion_threshold : 是否满足融合触发条件（默认≥3；CONCEPTUAL层≥2）
     """
     cluster_id: str
     knowledge_layer: str
@@ -76,10 +84,11 @@ class EquivalenceSet:
     experiences: List[Dict[str, Any]]
     trigger_level: str = "L1"
     has_conflict: bool = False
-    meets_fusion_threshold: bool = False  # len(experiences) >= 3
+    meets_fusion_threshold: bool = False  # len(experiences) >= layer-specific threshold
 
     def __post_init__(self) -> None:
-        self.meets_fusion_threshold = len(self.experiences) >= 3
+        threshold = _fusion_threshold_for_layer(self.knowledge_layer)
+        self.meets_fusion_threshold = len(self.experiences) >= threshold
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -174,7 +183,7 @@ class MergeResult:
 
     Attributes:
         cluster_id          : 来源等价集 ID（传递自 EquivalenceSet）
-        knowledge_layer     : 融合后的知识层（FACTUAL_RULE / FACTUAL_LLM / ...）
+        knowledge_layer     : 融合后的知识层（FACTUAL / PROCEDURAL_NEG / ...）
         target_service      : 归一化服务名
         version_family      : 版本族约束
         cve_ids             : 覆盖的 CVE ID 集合
@@ -265,3 +274,4 @@ class ConsolidatedExp:
     merged_into: Optional[str] = None    # 回滚时指向更新版本
     refluxed: bool = False               # 是否已回流至向量检索库
     provenance: Optional[Dict[str, Any]] = None  # Provenance.asdict()
+

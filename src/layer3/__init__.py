@@ -1,5 +1,5 @@
-"""
-RefPenTest Layer 3 — XPEC 经验融合框架
+﻿"""
+LORE Layer 3 — XPEC 经验融合框架
 =======================================
 Phase 1: Semantic Equivalence Clustering (SEC)  — sec.py
 Phase 2: Evidence Weight Calculation    (EWC)  — ewc.py
@@ -52,3 +52,4 @@ __all__ = [
     "summarize_klm_result",
     "KlmResult",
 ]
+

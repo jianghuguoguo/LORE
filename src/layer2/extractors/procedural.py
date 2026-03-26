@@ -20,7 +20,7 @@ Procedural 经验提取器（Positive + Negative）
 
 失败判定（PROCEDURAL_NEG 筛选条件）：
   failure_root_cause is not None
-  AND outcome_label in {failure, timeout, partial_success}
+    AND outcome_label in {failure, timeout}
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ _POS_PHASES = {
 }
 
 _SUCCESS_OUTCOMES = {"success", "partial_success"}
-_FAILURE_OUTCOMES = {"failure", "timeout", "partial_success"}
+_FAILURE_OUTCOMES = {"failure", "timeout"}
 
 # 成功信号关键词（用于 success_indicators 提取）
 _SUCCESS_SIGNALS = [
@@ -92,40 +92,23 @@ _SUCCESS_SIGNALS = [
 ]
 _SUCCESS_SIGNAL_RES = [re.compile(p, re.IGNORECASE) for p in _SUCCESS_SIGNALS]
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 端口 → 通用服务名（IANA Well-Known 兜底映射，不枚举应用层产品名）
-# ─────────────────────────────────────────────────────────────────────────────
-_PORT_TO_SERVICE: Dict[int, str] = {
-    21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP",
-    53: "DNS", 80: "HTTP", 110: "POP3", 143: "IMAP",
-    389: "LDAP", 443: "HTTPS", 445: "SMB",
-    636: "LDAPS", 1433: "Microsoft SQL Server", 1521: "Oracle Database",
-    2181: "ZooKeeper", 2379: "etcd", 3306: "MySQL", 3389: "RDP",
-    4369: "Erlang Port Mapper", 5432: "PostgreSQL", 5900: "VNC",
-    5984: "CouchDB", 6379: "Redis", 7001: "HTTP (port 7001)",
-    8009: "AJP", 8080: "HTTP (alt)", 8443: "HTTPS (alt)",
-    8888: "HTTP (alt)", 9000: "PHP-FPM", 9200: "Elasticsearch",
-    9300: "Elasticsearch (cluster)", 11211: "Memcached",
-    27017: "MongoDB", 50070: "Hadoop HDFS",
-}
-
 # 协议关键词 → 通用前置条件描述（不涉及具体产品名）
 _PROTO_PRECOND_PATTERNS: List[tuple] = [
     (r'https?://|curl\b|wget\b|http_request|nikto|gobuster|dirsearch|ferox|wfuzz|ffuf',
      "目标 HTTP/HTTPS 服务可访问"),
-    (r'\bssh\b|sshpass|paramiko|evil-winrm|Port 22\b',
-     "SSH 服务端口可达（凭据或密钥已知）"),
-    (r'\bftp\b|ftplib|vsftpd|Port 21\b',
+    (r'\bssh\b|sshpass|paramiko|evil-winrm',
+     "SSH 服务可访问（凭据或密钥已知）"),
+    (r'\bftp\b|ftplib|vsftpd',
      "FTP 服务可访问"),
-    (r'\bsmb\b|samba|smbclient|enum4linux|rpcclient|crackmapexec|\b445\b',
-     "SMB/445 端口可访问"),
-    (r'redis-cli|\bredis\b|\b6379\b',
+    (r'\bsmb\b|samba|smbclient|enum4linux|rpcclient|crackmapexec',
+     "SMB 服务可访问"),
+    (r'redis-cli|\bredis\b',
      "Redis 服务可访问（无认证或密码已知）"),
-    (r'\bmongo\b|pymongo|\b27017\b',
+    (r'\bmongo\b|pymongo',
      "MongoDB 服务可访问"),
-    (r'\bmysql\b|pymysql|mariadb|\b3306\b',
+    (r'\bmysql\b|pymysql|mariadb',
      "MySQL/MariaDB 数据库可访问"),
-    (r'psql|postgresql|asyncpg|\b5432\b',
+    (r'psql|postgresql|asyncpg',
      "PostgreSQL 数据库可访问"),
     (r'sqlmap|union select|\bsqli\b|sql injection',
      "目标存在 SQL 注入漏洞点"),
@@ -135,24 +118,24 @@ _PROTO_PRECOND_PATTERNS: List[tuple] = [
      "Python 脚本执行环境可用"),
     (r'payload|reverse.?shell|bind.?shell|meterpreter',
      "目标存在代码执行或命令注入入口"),
-    (r'\bldap\b|ldapsearch|\b389\b',
+    (r'\bldap\b|ldapsearch',
      "LDAP 服务可访问"),
-    (r'snmpwalk|snmpget|\b161\b',
+    (r'snmpwalk|snmpget',
      "SNMP 服务可访问（community string 已知）"),
     # 新增：WebLogic T3/IIOP
-    (r'7001|t3://|iiop://|weblogic',
-     "WebLogic T3/IIOP 服务可访问 (port 7001)"),
+    (r't3://|iiop://|weblogic',
+     "WebLogic T3/IIOP 服务可访问"),
     # 新增：JNDI/Log4Shell
-    (r'jndi:|log4shell|\b1389\b|log4j',
+    (r'jndi:|log4shell|log4j',
      "JNDI 注入入口可达（Log4Shell/JNDIExploit）"),
     # 新增：WinRM
-    (r'\b5985\b|\b5986\b|winrm|evil-winrm|Enter-PSSession',
-     "WinRM 服务可访问 (port 5985/5986)"),
+    (r'winrm|evil-winrm|Enter-PSSession',
+     "WinRM 服务可访问"),
     # 新增：Java 管理接口
     (r'druid|actuator|/api/index\.json|spring.boot',
      "Java 应用管理接口可访问（Druid/Actuator）"),
     # 新增：Jenkins
-    (r'8080.*jenkins|jenkins.*8080|/jenkins(?:/|$)|jenkins.script',
+    (r'jenkins|/jenkins(?:/|$)|jenkins.script',
      "Jenkins CI 服务可访问"),
     # 新增：Gitea/GitLab
     (r'gitea|gitlab|\.git(?:/api|/info)|/api/v4/',
@@ -216,22 +199,6 @@ def _soft_truncate(text: str, max_chars: int) -> str:
     return snippet
 
 
-def _port_to_service_hint(text: str) -> Optional[str]:
-    """从文本中提取端口号并返回服务名提示（优先 nmap 输出，其次 IANA 映射）。"""
-    # 先从 nmap 输出中解析真实服务名
-    m = re.search(r'(\d{1,5})/(?:tcp|udp)\s+open\s+(\S+)(?:\s+(.+))?', text, re.IGNORECASE)
-    if m:
-        svc = m.group(2).strip()
-        ver_col = (m.group(3) or "").strip()[:60]
-        return f"{svc} ({ver_col})" if ver_col else svc
-    # 再尝试从 URL / -p 参数中提取端口号
-    for m in re.finditer(r'(?:https?://[^/:]+:|(?:-p\s+|--port[=\s]+))(\d{2,5})\b', text, re.IGNORECASE):
-        port = int(m.group(1))
-        if port in _PORT_TO_SERVICE:
-            return _PORT_TO_SERVICE[port]
-    return None
-
-
 def _get_raw_output(event: AnnotatedEvent) -> str:
     """获取事件原始输出（最多 3000 chars）。"""
     if event.base.result is None:
@@ -293,15 +260,16 @@ def _is_pos_worthy(
     success_indicators: List[str],
     target_service: str = "",
     event_outcome: str = "",
+    has_cve: bool = False,
 ) -> bool:
     """P-2：判断一个成功事件是否值得作为 POS 经验存入知识库。
 
     过滤条件（返回 False = 不值得存）：
     1. 命令属于会话元操作（session output/terminate/async session 管理等）
     2. 没有成功信号 且 命令看起来是 session 管理短命令（sessions -l/-k/-i 等）
-    3. P1: target_service 为空 且 命令较短（<=100字符）且 无成功信号
+     3. P1: target_service 为空 且 命令较短（<=100字符）且 无成功信号
        → 无软件标识的纯端口连接测试/socket 测试，无检索价值
-       例外：event_outcome == 'partial_success' 说明存在部分攻击成效，不过滤
+         例外：event_outcome == 'partial_success' 或命令/输出中已检测到 CVE 时不过滤
 
     Args:
         command           : 原始命令/代码文本
@@ -326,6 +294,7 @@ def _is_pos_worthy(
         and len(command.strip()) <= 100
         and not success_indicators
         and event_outcome != "partial_success"
+        and not has_cve
     ):
         return False
     return True
@@ -337,10 +306,10 @@ def _infer_preconditions(
     cve_ids: List[str],
     confirmed_cve: Optional[str] = None,
 ) -> List[str]:
-    """推断操作的前置条件（基于协议/端口/上下文推断，不依赖固定产品名枚举）。
+    """推断操作的前置条件（基于协议/上下文推断，不依赖固定产品名枚举）。
 
     设计原则：
-    - 从命令文本、工具名、端口号等结构性特征推断通用协议级别前置条件
+    - 从命令文本、工具名等结构性特征推断通用协议级别前置条件
     - CVE ID 若存在则作为可选增强，不强依赖
     - 使用预编译正则 _PROTO_PRECOND_RES 匹配，覆盖主要协议和工具
     - P-3: confirmed_cve 若提供，用于约束 CVE 前置条件（避免 JNDI/Log4Shell 污染 Druid CVE 前置条件）
@@ -366,13 +335,9 @@ def _infer_preconditions(
     if event.base.has_rag_context:
         preconditions.append("已通过 RAG 知识检索获取相关利用信息")
 
-    # 4. 兜底：至少提供一条基于端口的通用条件
+    # 4. 兜底：至少提供一条通用条件
     if not preconditions:
-        hint = _port_to_service_hint(combined)
-        if hint:
-            preconditions.append(f"{hint} 服务正常运行且可访问")
-        else:
-            preconditions.append("目标服务正常运行且可访问")
+        preconditions.append("目标服务正常运行且可访问")
 
     return list(dict.fromkeys(preconditions))
 
@@ -384,8 +349,7 @@ def _infer_target_service(command: str, output: str, cve_ids: List[str]) -> Opti
     1. nmap open 行 → 包含 service + version，最权威
     2. HTTP 响应头 Server / X-Powered-By
     3. "ProductName/Version" 或 "ProductName_Version" 版本字符串
-    4. 端口号 IANA 映射（兜底，返回通用协议名）
-    5. CVE 编号作为补充描述（可选，无 CVE 则不输出）
+    4. CVE 编号作为补充描述（可选，无 CVE 则不输出）
     """
     # 1. nmap 开放端口行（最直接的信息来源）
     m = re.search(
@@ -418,12 +382,7 @@ def _infer_target_service(command: str, output: str, cve_ids: List[str]) -> Opti
         if not re.search(r'https?://', cur_line, re.IGNORECASE):
             return m.group(0).strip()[:80]
 
-    # 4. 端口号 IANA 映射（从命令中提取端口）
-    hint = _port_to_service_hint(command)
-    if hint:
-        return hint
-
-    # 5. CVE 编号（可选增强，不依赖静态产品映射表）
+    # 4. CVE 编号（可选增强，不依赖静态产品映射表）
     if cve_ids:
         return f"目标存在 {cve_ids[0]} 漏洞的服务"
 
@@ -440,6 +399,7 @@ def _extract_pos_from_event(
     counter: int,
     session_outcome_str: str,
     target_raw: Optional[str],
+    session_target_software: str = "",
 ) -> Optional[Experience]:
     """从单个成功事件提取 PROCEDURAL_POS 经验条目。"""
     command = _get_command_text(event)
@@ -469,12 +429,15 @@ def _extract_pos_from_event(
     confirmed_cve = cve_ids[0] if cve_ids else None
     preconditions = _infer_preconditions(event, command, cve_ids, confirmed_cve=confirmed_cve)
     target_service = _infer_target_service(command, raw_output, cve_ids)
+    if not target_service and session_target_software:
+        target_service = session_target_software.strip()[:80]
 
     # P-2：过滤元操作/无价值的成功事件
     if not _is_pos_worthy(
         command, success_indicators,
-        target_service=target_service,
+        target_service=target_service or "",
         event_outcome=event.outcome_label or "",
+        has_cve=bool(cve_ids),
     ):
         return None
 
@@ -486,6 +449,7 @@ def _extract_pos_from_event(
         and len(command.strip()) <= 50
         and not success_indicators
         and event_outcome != "partial_success"
+        and not cve_ids
     ):
         return None  # 纯连接测试，无实际攻击价值
 
@@ -514,7 +478,13 @@ def _extract_pos_from_event(
     )
     if success_indicators:
         # 有成功信号：正常基础分
-        base_conf = 0.78 if session_outcome_str == "success" else 0.72
+        if session_outcome_str == "success":
+            base_conf = 0.78
+        elif session_outcome_str == "partial_success":
+            base_conf = 0.72
+        else:
+            # 失败会话中的偶发成功步骤：保留但降低基础置信度
+            base_conf = 0.60
     elif len(command.strip()) <= 50:
         # 🟡 Fix: 短命令 + 无信号 = socket/连通性测试，大幅降低置信度
         base_conf = 0.35
@@ -538,6 +508,11 @@ def _extract_pos_from_event(
         session_outcome=session_outcome_str,
         target_raw=target_raw,
         tags=tags,
+        applicable_constraints={
+            "target_service": target_service or "",
+            "target_version": "",
+            "cve_ids": cve_ids[:5],
+        },
     )
 
     return Experience(
@@ -554,12 +529,68 @@ def _extract_pos_from_event(
 # PROCEDURAL_NEG 提取
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _build_rule_fallback_decision_rule(
+    command: str,
+    tool_name: str,
+    attack_phase: Optional[str],
+    dim: str,
+    sub_dim: str,
+    evidence: str,
+    remediation: str,
+) -> Dict[str, Any]:
+    """在 NEG 规则抽取阶段生成可执行的兜底 decision_rule，避免空模板下沉到 Layer3。"""
+    command_template, _ = parameterize_command(command)
+    phase = attack_phase or "UNKNOWN"
+    sub = sub_dim or "UNKNOWN"
+    ev = _soft_truncate(evidence, 140)
+
+    if_clause = f"当 `{tool_name}` 在 {phase} 阶段出现 {dim}/{sub} 失败"
+    if ev:
+        if_clause = f"{if_clause}，并出现证据：{ev}"
+
+    dim_then_map = {
+        "ENV": "先验证工具/依赖/权限与网络连通性，再重试。",
+        "INV": "先校验参数与调用语法，必要时最小化参数集重跑。",
+        "DEF": "先确认认证/授权与防护策略，再选择绕过或替代路径。",
+        "INT": "先补充版本/端口/路径侦察，再调整漏洞假设。",
+        "EFF": "先验证执行效果与回显链路，再切换 payload 或验证方式。",
+    }
+
+    then_items = []
+    if remediation:
+        then_items.append(_soft_truncate(remediation, 220))
+    then_items.append(dim_then_map.get(dim, "先补充前置验证，再迭代调整命令。"))
+    then_items.append("重试前执行参数化预检，确认失败信号消失后再继续利用链。")
+    then_items = list(dict.fromkeys([t for t in then_items if t]))[:3]
+
+    decision_rule: Dict[str, Any] = {
+        "IF": if_clause,
+        "THEN": then_items,
+        "NOT": f"未验证前置条件时直接重复执行原始命令 `{tool_name}`。",
+        "next_actions": [
+            {
+                "step": 1,
+                "tool": tool_name[:50],
+                "command": command_template[:300],
+                "expected_signal": "执行链路可达且不再出现原失败特征",
+            },
+            {
+                "step": 2,
+                "tool": "generic_linux_command",
+                "command": "echo \"validate prerequisites before retry\"",
+                "expected_signal": "前置条件清单确认完成",
+            },
+        ],
+    }
+    return decision_rule
+
 def _extract_neg_from_event(
     event: AnnotatedEvent,
     session_id: str,
     counter: int,
     session_outcome_str: str,
     target_raw: Optional[str],
+    session_target_software: str = "",
 ) -> Optional[Experience]:
     """从单个失败事件提取 PROCEDURAL_NEG 经验条目。"""
     frc = event.failure_root_cause
@@ -567,6 +598,7 @@ def _extract_neg_from_event(
         return None
 
     command = _get_command_text(event)
+    raw_output = _get_raw_output(event)
     tool_name = event.base.call.tool_name
     attack_phase = event.attack_phase
 
@@ -579,6 +611,10 @@ def _extract_neg_from_event(
     remediation = _sanitize_ip_text(frc.remediation_hint or "")
     reasoning = _sanitize_ip_text((frc.reasoning or ""))
     evidence_snippet = _soft_truncate(evidence, 150)
+    cve_ids = extract_cve_ids(f"{command}\n{raw_output}\n{evidence}")
+    target_service = _infer_target_service(command, f"{raw_output}\n{evidence}", cve_ids)
+    if not target_service and session_target_software:
+        target_service = session_target_software.strip()[:80]
 
     # 生成 avoid_pattern：结合 frc.evidence 和 frc.reasoning 生成丰富描述
     avoid_base_map = {
@@ -609,6 +645,23 @@ def _extract_neg_from_event(
         "avoid_pattern": avoid_pattern,
         "frc_source": frc.source,
         "frc_reasoning": _soft_truncate(reasoning, 500),
+        "failure_pattern_detail": {
+            "trigger_condition": _soft_truncate(evidence or f"{dim}/{sub_dim} failure observed", 300),
+            "interpretation": _soft_truncate(avoid_pattern, 300),
+            "certainty": "medium",
+        },
+        "decision_rule": _build_rule_fallback_decision_rule(
+            command=command,
+            tool_name=tool_name,
+            attack_phase=attack_phase,
+            dim=dim,
+            sub_dim=sub_dim,
+            evidence=evidence,
+            remediation=remediation,
+        ),
+        "decision_rule_source": "rule_fallback",
+        "target_service": target_service or "",
+        "cve_ids": cve_ids,
     }
 
     tags = generate_tags(
@@ -626,6 +679,11 @@ def _extract_neg_from_event(
         session_outcome=session_outcome_str,
         target_raw=target_raw,
         tags=list(dict.fromkeys(tags)),
+        applicable_constraints={
+            "target_service": target_service or "",
+            "target_version": "",
+            "cve_ids": cve_ids[:5],
+        },
     )
 
     return Experience(
@@ -766,6 +824,7 @@ def _enrich_neg_with_decision_rules(
                     if next_actions:
                         decision_rule_entry["next_actions"] = next_actions
                 exp.content["decision_rule"] = decision_rule_entry
+                exp.content["decision_rule_source"] = "llm"
 
 
 def extract_procedural_experiences(
@@ -805,15 +864,15 @@ def extract_procedural_experiences(
         outcome = event.outcome_label or ""
 
         # ── PROCEDURAL_POS ────────────────────────────────────────────────
-        # 需要：事件级别成功 AND 会话级别成功（避免从失败会话的偶发成功事件提取 POS）
+        # 仅要求事件级别成功：event 级成功步骤本身具有可复用价值。
         if (
             outcome in _SUCCESS_OUTCOMES
             and phase in _POS_PHASES
-            and session_outcome_str in _SUCCESS_OUTCOMES
         ):
             exp = _extract_pos_from_event(
                 event, session_id, counter,
                 session_outcome_str, target_raw,
+                session_target_software=session_target_software,
             )
             if exp:
                 # 语义去重：相同会话 + 相同工具 + 相同阆段 + 相同命令前缀 视为重复
@@ -837,6 +896,7 @@ def extract_procedural_experiences(
             exp = _extract_neg_from_event(
                 event, session_id, counter,
                 session_outcome_str, target_raw,
+                session_target_software=session_target_software,
             )
             if exp:
                 # 语义去重：相同会话 + 相同失败维度大类 + 相同工具 + 相同命令前缀

@@ -1,4 +1,4 @@
-# src/layer4/crawler.py
+﻿# src/layer4/crawler.py
 """
 CrawlWorker — 外部知识获取模块。
 
@@ -25,7 +25,7 @@ from .models import GapSignal, CrawlResult
 logger = logging.getLogger(__name__)
 
 # ── 确保 crawlers/ 在 sys.path ────────────────────────────────────────────────
-_ROOT = Path(__file__).parent.parent.parent          # RefPenTest/
+_ROOT = Path(__file__).parent.parent.parent          # LORE/
 for _p in [str(_ROOT), str(_ROOT / "crawlers")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -207,3 +207,4 @@ class CrawlWorker:
                 ))
 
         return crawl_results
+
