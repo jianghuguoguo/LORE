@@ -1,4 +1,4 @@
-﻿# LORE · 渗透测试知识蒸馏系统
+﻿# LORE · 面向渗透测试智能体的日志锚定异步反思与类型化经验积累框架
 
 <div align="center">
 
@@ -38,7 +38,7 @@
 
 ## 项目定位
 
-LORE（Reflective Penetration Testing）是一个面向渗透测试场景的多层知识蒸馏系统。
+LORE（Log-grounded Offline Reflection and Experience）是一个面向渗透测试场景的多层知识蒸馏系统。
 它将原始攻防日志转化为五类结构化经验，并通过跨会话融合与缺口感知机制，让知识库持续迭代。
 
 一句话概括：
