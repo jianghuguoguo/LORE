@@ -26,6 +26,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import sys
+
+# Windows 控制台下避免 UnicodeEncodeError 影响同步线程。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from crawlers.base_crawler import BaseCrawler
@@ -222,7 +229,7 @@ class RSSCrawler(BaseCrawler):
         }
         _save_state(state)
 
-        print(f"  ✅ {self.feed_name}: 共获取 {len(results)} 篇新文章")
+        print(f"  [OK] {self.feed_name}: 共获取 {len(results)} 篇新文章")
         return results
 
     # ── 内部方法 ──────────────────────────────────────────────────────────────
@@ -232,7 +239,7 @@ class RSSCrawler(BaseCrawler):
         try:
             import feedparser
         except ImportError:
-            print("  ❌ 缺少依赖: feedparser。请运行: pip install feedparser")
+            print("  [ERROR] 缺少依赖: feedparser。请运行: pip install feedparser")
             return None
 
         try:
@@ -251,7 +258,7 @@ class RSSCrawler(BaseCrawler):
                 feed = feedparser.parse(resp.content)
 
             if feed.bozo and not feed.entries:
-                print(f"  ⚠️  Feed 解析异常: {feed.bozo_exception}")
+                print(f"  [WARN] Feed 解析异常: {feed.bozo_exception}")
                 return None
 
             entries = []
@@ -271,7 +278,7 @@ class RSSCrawler(BaseCrawler):
             return entries
 
         except Exception as exc:
-            print(f"  ❌ 拉取 Feed 失败: {exc}")
+            print(f"  [ERROR] 拉取 Feed 失败: {exc}")
             return None
 
     def _process_entry(self, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -428,7 +435,7 @@ class RSSAggregator:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = out_dir / f"rss_{ts}.json"
         path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"  💾 {feed_name}: 已保存 {len(results)} 篇 → {path}")
+        print(f"  [SAVE] {feed_name}: 已保存 {len(results)} 篇 -> {path}")
 
 
 # ── 命令行入口 ─────────────────────────────────────────────────────────────────
@@ -455,7 +462,7 @@ if __name__ == "__main__":
         names = {n.strip() for n in args.feeds.split(",")}
         feeds_to_use = {k: v for k, v in RSS_FEEDS.items() if k in names}
         if not feeds_to_use:
-            print(f"❌ 未找到指定 feed: {args.feeds}，可用: {list(RSS_FEEDS)}")
+            print(f"[ERROR] 未找到指定 feed: {args.feeds}，可用: {list(RSS_FEEDS)}")
             sys.exit(1)
 
     agg = RSSAggregator(feeds_to_use)

@@ -193,8 +193,10 @@ def main():
         print(f"\n  已选择: {', '.join(selected_sources)}")
 
     # 获取搜索参数
-    if args.query is not None:
-        query = args.query
+    # 只要明确通过命令行指定了数据源或快速模式，就走非交互分支。
+    non_interactive_mode = args.query is not None or args.sources is not None or args.all or args.yes
+    if non_interactive_mode:
+        query = args.query if args.query is not None else ""
         max_pages = args.max_pages
         output_dir = args.output
         if query:

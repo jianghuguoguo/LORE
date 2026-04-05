@@ -17,11 +17,13 @@ import argparse
 import hashlib
 import json
 import logging
+import os as _os
 import random
 import re
+import socket
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode, urlparse, parse_qs
@@ -37,6 +39,11 @@ SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 SEED_FILE = _HERE / 'seed_accounts.yaml'
 
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from runtime_settings import get_effective_sogou_settings
+
 # ── 日志 ─────────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -46,41 +53,170 @@ logging.basicConfig(
 log = logging.getLogger('wechat_crawl')
 
 # ── HTTP Session ──────────────────────────────────────────────────────────────
-# 使用现有梯子代理（7890）访问搜狗
+# 代理模式显式可配置：默认直连，避免每次请求都先撞本地 7890。
+_SOGOU_SETTINGS = get_effective_sogou_settings(env=_os.environ)
+_PROXY_MODE = str(_SOGOU_SETTINGS['proxy_mode']).strip().lower()
+_PROXY_HOST = str(_SOGOU_SETTINGS['proxy_host'])
+_PROXY_PORT = str(_SOGOU_SETTINGS['proxy_port'])
+_PROXY_URL = str(_SOGOU_SETTINGS['proxy_url'])
+_SEARCH_DELAY_MIN = float(_SOGOU_SETTINGS['search_delay_min'])
+_SEARCH_DELAY_MAX = float(_SOGOU_SETTINGS['search_delay_max'])
+_ANTISPIDER_WAIT_MIN = int(_SOGOU_SETTINGS['antispider_wait_min'])
+_ANTISPIDER_WAIT_MAX = int(_SOGOU_SETTINGS['antispider_wait_max'])
+
+if _PROXY_MODE not in {'direct', 'auto', 'proxy'}:
+    log.warning(f'未知 LORE_SOGOU_PROXY_MODE={_PROXY_MODE!r}，回退为 direct')
+    _PROXY_MODE = 'direct'
+
 PROXY = {
-    'http':  'http://127.0.0.1:7890',
-    'https': 'http://127.0.0.1:7890',
+    'http': _PROXY_URL,
+    'https': _PROXY_URL,
 }
 
+_PROXY_AVAILABLE: Optional[bool] = None
+_TRANSPORT_LOGGED = False
+
+_USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+]
+
 HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/122.0.0.0 Safari/537.36'
-    ),
+    'User-Agent': random.choice(_USER_AGENTS),
     'Accept-Language': 'zh-CN,zh;q=0.9',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Referer': 'https://weixin.sogou.com/',
 }
 
+
+def _refresh_headers(sess: requests.Session, referer: str = 'https://weixin.sogou.com/') -> None:
+    """轮换 UA，并维持更像浏览器的请求头。"""
+    sess.headers.update({
+        'User-Agent': random.choice(_USER_AGENTS),
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Cache-Control': 'max-age=0',
+        'Referer': referer,
+    })
+
+
+def _sleep_jitter(low: float, high: float, reason: str = '') -> None:
+    secs = random.uniform(low, high)
+    if reason:
+        log.debug(f'{reason}，等待 {secs:.1f}s')
+    time.sleep(secs)
+
+
+def _probe_proxy_once() -> bool:
+    """仅在 auto 模式下探测一次本地代理是否可用。"""
+    global _PROXY_AVAILABLE
+    if _PROXY_AVAILABLE is not None:
+        return _PROXY_AVAILABLE
+    try:
+        with socket.create_connection((_PROXY_HOST, int(_PROXY_PORT)), timeout=1.5):
+            _PROXY_AVAILABLE = True
+    except OSError:
+        _PROXY_AVAILABLE = False
+    return _PROXY_AVAILABLE
+
+
+def _iter_transports() -> list[tuple[str, Optional[dict[str, str]]]]:
+    if _PROXY_MODE == 'direct':
+        return [('直连', None)]
+    if _PROXY_MODE == 'proxy':
+        return [('代理', PROXY)]
+    if _probe_proxy_once():
+        return [('代理', PROXY), ('直连', None)]
+    return [('直连', None)]
+
+
+def _log_transport_once() -> None:
+    global _TRANSPORT_LOGGED
+    if _TRANSPORT_LOGGED:
+        return
+    _TRANSPORT_LOGGED = True
+    if _PROXY_MODE == 'proxy':
+        log.info(f'[Transport] 搜狗请求固定走代理: {_PROXY_URL}')
+    elif _PROXY_MODE == 'auto':
+        if _probe_proxy_once():
+            log.info(f'[Transport] 搜狗请求优先代理，失败回退直连: {_PROXY_URL}')
+        else:
+            log.info('[Transport] 未探测到可用本地代理，搜狗请求改为直连')
+    else:
+        log.info('[Transport] 搜狗请求默认直连；如需代理请设置 LORE_SOGOU_PROXY_MODE=auto|proxy')
+
+
+def _is_antispider_response(resp: requests.Response) -> bool:
+    preview = resp.text[:600] if resp.text else ''
+    return 'antispider' in resp.url or 'antispider' in preview
+
+
 def _make_session() -> requests.Session:
     """创建新的 requests Session 并设置通用 Headers。"""
     s = requests.Session()
+    s.trust_env = False
     s.headers.update(HEADERS)
     return s
 
 
 def _get(sess: requests.Session, url: str, **kwargs) -> Optional[requests.Response]:
-    """带重试的 GET（通过 7890 代理）。"""
-    for attempt in range(3):
-        try:
-            resp = sess.get(url, proxies=PROXY, timeout=20, **kwargs)
-            if resp.status_code == 200:
-                return resp
-            log.warning(f'HTTP {resp.status_code} for {url[:80]}')
-        except Exception as e:
-            log.warning(f'请求失败 (尝试 {attempt+1}/3): {e}')
-        time.sleep(2 ** attempt)
+    """带重试的 GET，支持 direct / auto / proxy 三种代理模式。"""
+    _log_transport_once()
+    max_attempts = int(kwargs.pop('_max_attempts', 3))
+    skip_delay = bool(kwargs.pop('_skip_delay', False))
+
+    if not skip_delay and 'weixin.sogou.com' in url:
+        _refresh_headers(sess)
+        _sleep_jitter(_SEARCH_DELAY_MIN, _SEARCH_DELAY_MAX, 'Sogou 搜索限速')
+
+    for attempt in range(max_attempts):
+        for transport_name, proxies in _iter_transports():
+            try:
+                resp = sess.get(url, proxies=proxies, timeout=20, **kwargs)
+                if resp.status_code == 200:
+                    return resp
+                if resp.status_code in (403, 429):
+                    log.warning(f'HTTP {resp.status_code} ({transport_name}): {url[:80]}')
+                else:
+                    log.warning(f'{transport_name} HTTP {resp.status_code}: {url[:80]}')
+            except requests.RequestException as req_err:
+                if proxies and _PROXY_MODE == 'auto':
+                    global _PROXY_AVAILABLE
+                    _PROXY_AVAILABLE = False
+                log.warning(f'{transport_name}请求失败 (尝试 {attempt+1}/{max_attempts}): {req_err}')
+        if attempt < max_attempts - 1:
+            _sleep_jitter(1.5 * (attempt + 1), 3.0 * (attempt + 1), '请求退避')
+    return None
+
+
+def _warmup_sogou_session(sess: requests.Session) -> None:
+    """先访问首页获取 cookie，再发搜索请求，降低首次即触发验证的概率。"""
+    _refresh_headers(sess)
+    resp = _get(sess, 'https://weixin.sogou.com/', _skip_delay=True, _max_attempts=1)
+    if resp is not None:
+        _sleep_jitter(1.0, 2.2, 'Sogou 会话预热完成')
+
+
+def _get_sogou_search_page(sess: requests.Session, search_url: str, label: str) -> Optional[requests.Response]:
+    """对搜狗搜索页面增加预热和更保守的验证码退避。"""
+    resp = _get(sess, search_url)
+    if not resp:
+        return None
+    if not _is_antispider_response(resp):
+        return resp
+
+    wait_sec = random.randint(_ANTISPIDER_WAIT_MIN, _ANTISPIDER_WAIT_MAX)
+    log.warning(f'[{label}] 被搜狗验证码拦截，等待 {wait_sec}s 后重试')
+    time.sleep(wait_sec)
+    _warmup_sogou_session(sess)
+
+    resp2 = _get(sess, search_url, _max_attempts=2)
+    if resp2 and not _is_antispider_response(resp2):
+        log.info(f'[{label}] 验证页解除，继续解析')
+        return resp2
+
+    log.warning(f'[{label}] 重试仍被拦截，本页放弃')
     return None
 
 
@@ -108,21 +244,9 @@ def search_and_resolve_articles(
     search_url = 'https://weixin.sogou.com/weixin?' + urlencode(params)
     log.debug(f'搜索: {search_url}')
 
-    resp = _get(sess, search_url)
+    resp = _get_sogou_search_page(sess, search_url, f'文章搜索:{account_name}:p{page}')
     if not resp:
         return []
-
-    # 被验证码拦截 —— 等待后重试一次，而非直接放弃
-    if 'antispider' in resp.url or 'antispider' in resp.text[:300]:
-        log.warning('被搜狗验证码拦截，等待 90 秒后重试一次')
-        time.sleep(90)
-        resp2 = _get(sess, search_url)
-        if resp2 and 'antispider' not in resp2.url and 'antispider' not in resp2.text[:300]:
-            resp = resp2
-            log.info('验证码已解除，继续解析')
-        else:
-            log.warning('重试仍被拦截，本页放弃')
-            return []
 
     soup = BeautifulSoup(resp.text, 'html.parser')
     items = soup.select('ul.news-list li')
@@ -134,7 +258,7 @@ def search_and_resolve_articles(
         if not h3_a:
             continue
         title = h3_a.get_text(strip=True)
-        sogou_href = h3_a.get('href', '')
+        sogou_href = str(h3_a.get('href', '') or '')
         if not sogou_href:
             continue
 
@@ -152,7 +276,8 @@ def search_and_resolve_articles(
         if ts_el:
             try:
                 import datetime as _dt
-                pub_time = _dt.datetime.fromtimestamp(int(ts_el['data-ts'])).strftime('%Y-%m-%d')
+                ts_raw = str(ts_el.get('data-ts', '') or '')
+                pub_time = _dt.datetime.fromtimestamp(int(ts_raw)).strftime('%Y-%m-%d')
             except Exception:
                 pass
         # 备用：查找 em 标签（搜狗有时把时间放在 em 里）
@@ -197,11 +322,8 @@ def _lookup_account_biz(sess: requests.Session, account_name: str) -> Optional[s
     """
     params = {'type': '1', 'query': account_name}
     url = 'https://weixin.sogou.com/weixin?' + urlencode(params)
-    resp = _get(sess, url)
+    resp = _get_sogou_search_page(sess, url, f'biz搜索:{account_name}')
     if not resp:
-        return None
-    if 'antispider' in resp.url or 'antispider' in resp.text[:300]:
-        log.debug('公众号搜索被验证码拦截，跳过 biz 查询')
         return None
 
     soup = BeautifulSoup(resp.text, 'html.parser')
@@ -214,7 +336,7 @@ def _lookup_account_biz(sess: requests.Session, account_name: str) -> Optional[s
             continue
         # 账号卡片链接示例：/weixin?type=2&query=__biz%3DMzI3NjI3Mz...
         for a in item.select('a[href]'):
-            href = a.get('href', '')
+            href = str(a.get('href', '') or '')
             m = re.search(r'[?&]query=__biz(?:%3D|=)([A-Za-z0-9+/]+={0,2})', href)
             if m:
                 biz = m.group(1)
@@ -348,37 +470,43 @@ def save_article(data: dict) -> Path:
 
 # ── Bug7: 技术内容过滤 ─────────────────────────────────────────────────────
 
-# 正向识别关键词：出现即为技术文
-_TECH_KEYWORDS = [
-    # 渗透测试
-    '渗透', '漏洞', '利用', '提权', '内网',  '魂弹', 'exploit', 'payload', 'bypass',
-    'rce', 'lfi', 'rfi', 'ssrf', 'ssti', 'xxe', 'deseri',
-    # web 安全
-    'sql注入', 'xss', 'csrf', '注入', '序列化', '文件包含', '命令执行', '上传',
-    'web安全', '请求伪造',
-    # 漏洞/CVE
-    'cve-', 'cve编号', 'cnnvd', 'cnvd', '0day', '0-day', 'poc', 'exp ',
-    '高危漏洞', '严重漏洞', '远程代码执行', '任意代码执行',
-    # 恶意软件/威胁情报
-    '威胁', '恶意软件', '勒索', '木马', '后门', 'apt', '魚叉攻击', 'c2',
-    '尾部', '水坑攻击', '晚期', 'malware', 'ransomware', 'trojan',
-    # CTF/逆向工程
-    'ctf', '逆向', '调试', 'pwn', 'shellcode', '二进制分析',
-    # 代码审计
-    '代码审计', '稿件分析', '漏洞分析', '文件分析',
-    # 安全工具/技术
-    'nmap', 'burp', 'metasploit', 'cobalt', 'mimikatz', 'sqlmap',
-    '扫描', '字典爆破', '哈希', '密码破解',
+_STRONG_TECH_PATTERNS = [
+    r'cve-\d{4}-\d{4,7}',
+    r'漏洞|漏洞复现|漏洞分析|利用链|补丁分析',
+    r'远程代码执行|任意代码执行|命令执行|提权|越权|越界|目录遍历|反序列化',
+    r'sql注入|xss|ssrf|xxe|rce|lfi|rfi|ssti',
+    r'poc\b|\bexp\b|exploit|payload|getshell|shellcode',
+    r'渗透测试|内网渗透|横向移动|红队|蓝队|应急响应|威胁狩猎',
 ]
 
-# 负向关键词：标题包含即直接丢弃
-_NOISE_TITLE_KEYWORDS = [
-    '情报汇报', '年度盘点', '荣誉之路', '展会', '幕后', '内测开启',
-    '电台', '招聘', '招聘信息', '活动规划', '公报', '周报',
-    '快讯', '年动', '年报', 'pr稿', '宣传', '公司诎生', '周年庆',
+_TECH_HINT_KEYWORDS = [
+    '渗透', '漏洞', '利用', '提权', '内网', '绕过', 'web安全', '0day', '0-day',
+    'cnnvd', 'cnvd', '高危漏洞', '严重漏洞', '威胁情报', '恶意软件', '勒索', '木马',
+    '后门', 'apt', 'c2', 'ctf', '逆向', '二进制', '代码审计', 'nmap', 'burp',
+    'metasploit', 'mimikatz', 'sqlmap', '免杀', '攻击链', '复盘', '通告', '预警',
 ]
 
-MIN_CONTENT_LEN = 300  # 正文少于此字数直接丢弃
+_NOISE_TITLE_HINTS = [
+    '战略合作', '签署合作', '达成合作', '签约仪式', '发布会', '峰会', '论坛', '大会', '研讨会',
+    '招聘', '校招', '内推', '获奖', '荣誉', '周年', '生态合作', '联合声明', '活动报名',
+    '直播预告', '课程报名', '产品发布', '品牌升级',
+]
+
+_NOISE_CONTENT_HINTS = [
+    '签署战略合作协议', '双方经营班子成员', '出席并见证签约仪式', '市场需求的迎合', '业务团队代表',
+    '合作伙伴', '品牌影响力', '市场拓展', '生态共建',
+]
+
+MIN_CONTENT_LEN = 260
+
+
+def _normalize_text_for_match(text: str) -> str:
+    s = str(text or '').lower().strip()
+    if not s:
+        return ''
+    s = re.sub(r'[\s\u3000]+', '', s)
+    s = re.sub(r'[·•,，.。:：;；\-_/\\|()（）\[\]{}<>《》【】\"\'“”‘’`~!！?？]', '', s)
+    return s
 
 
 def _is_tech_relevant(data: dict) -> tuple[bool, str]:
@@ -386,30 +514,39 @@ def _is_tech_relevant(data: dict) -> tuple[bool, str]:
     判断文章是否具备渗透测试/信息安全的技术价值。
     返回 (True, '') 表示通过，返回 (False, 原因) 表示过滤。
     """
-    title   = data.get('title', '').lower()
-    content = data.get('content', '').lower()
-    clen    = len(data.get('content', ''))
+    title_raw = str(data.get('title', '') or '')
+    content_raw = str(data.get('content', '') or '')
+    title = _normalize_text_for_match(title_raw)
+    content = _normalize_text_for_match(content_raw)
+    full_raw = f'{title_raw}\n{content_raw}'
+    clen = len(content_raw)
 
     # 1. 内容过短
     if clen < MIN_CONTENT_LEN:
         return False, f'正文过短({clen}字<{MIN_CONTENT_LEN})'
 
-    # 2. 标题包含噪声词，直接丢弃
-    for kw in _NOISE_TITLE_KEYWORDS:
-        if kw in title:
-            return False, f'标题包含噪声词[{kw}]'
+    strong_hits = sum(1 for p in _STRONG_TECH_PATTERNS if re.search(p, full_raw, re.IGNORECASE))
+    title_strong_hits = sum(1 for p in _STRONG_TECH_PATTERNS if re.search(p, title_raw, re.IGNORECASE))
+    hint_hits = sum(1 for kw in _TECH_HINT_KEYWORDS if kw in title or kw in content)
 
-    # 3. 标题命中技术关键词 → 直接通过
-    for kw in _TECH_KEYWORDS:
-        if kw in title:
-            return True, ''
+    noise_title_hits = [kw for kw in _NOISE_TITLE_HINTS if kw in title]
+    if noise_title_hits and title_strong_hits == 0 and hint_hits < 3:
+        return False, f'标题偏宣传({"/".join(noise_title_hits[:2])})'
 
-    # 4. 正文中需出现 ≥ 2 个技术关键词才通过（标题模糊的情况）
-    hits = sum(1 for kw in _TECH_KEYWORDS if kw in content)
-    if hits >= 2:
+    noise_content_hits = sum(1 for kw in _NOISE_CONTENT_HINTS if kw in content_raw)
+    if noise_content_hits >= 2 and strong_hits == 0 and hint_hits < 4:
+        return False, '正文偏商务宣传'
+
+    if title_strong_hits >= 1:
         return True, ''
 
-    return False, f'未命中技术关键词(正文命中={hits})'
+    if strong_hits >= 1 and hint_hits >= 2:
+        return True, ''
+
+    if hint_hits >= 6:
+        return True, ''
+
+    return False, f'技术信号不足(强匹配={strong_hits},提示词={hint_hits})'
 
 
 def _account_matches(actual: str, target: str) -> bool:
@@ -420,23 +557,54 @@ def _account_matches(actual: str, target: str) -> bool:
       · 包含关系（绿盟科技 ∈ 绿盟科技研究院 → 匹配）
       · 英文账号去括号（nu1l team vs nu1l）
     """
-    a = actual.strip().lower().replace(' ', '')
-    t = target.strip().lower().replace(' ', '')
+    a = _normalize_text_for_match(actual)
+    t = _normalize_text_for_match(target)
     if not a:  # 文章页未提取到账号名，放行
         return True
     if a == t:
         return True
-    # 包含关系：任一方包含另一方（处理全称/简称）
-    if a in t or t in a:
+
+    # 去除常见后缀后再做匹配，降低“研究院/实验室/官方号”差异影响。
+    suffix_re = r'(官方公众号|公众号|官方|研究院|研究中心|实验室|安全实验室|安全研究院)$'
+    a_core = re.sub(suffix_re, '', a)
+    t_core = re.sub(suffix_re, '', t)
+    if a_core and t_core and a_core == t_core:
         return True
-    # 字符重叠比例 >= 0.7（处理轻微差异）
-    a_set = set(a)
-    t_set = set(t)
-    if a_set and t_set:
-        overlap = len(a_set & t_set) / max(len(a_set), len(t_set))
-        if overlap >= 0.75 and min(len(a), len(t)) >= 3:
-            return True
+
+    if min(len(a_core), len(t_core)) >= 3 and (a_core in t_core or t_core in a_core):
+        return True
+
     return False
+
+
+def _parse_pub_date(raw: str) -> Optional[datetime]:
+    """尽量容错地解析公众号发布时间，支持 YYYY-MM-DD / YYYY年MM月DD日 等格式。"""
+    s = str(raw or '').strip()
+    if not s:
+        return None
+    s = s.replace('年', '-').replace('月', '-').replace('日', '')
+    s = s.replace('/', '-').replace('.', '-')
+
+    m = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', s)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+
+    # 兼容少数页面仅给出 MM-DD 的情况
+    m2 = re.search(r'(\d{1,2})-(\d{1,2})', s)
+    if m2:
+        now = datetime.now()
+        try:
+            dt = datetime(now.year, int(m2.group(1)), int(m2.group(2)))
+            if dt > now + timedelta(days=1):
+                dt = dt.replace(year=now.year - 1)
+            return dt
+        except ValueError:
+            return None
+
+    return None
 
 
 # ── 主爬取逻辑 ────────────────────────────────────────────────────────────────
@@ -463,16 +631,19 @@ def _load_seen_keys() -> tuple[set[str], set[str]]:
     return seen_urls, seen_titles
 
 
-def crawl_account(account_name: str, count: int = 20) -> int:
+def crawl_account(account_name: str, count: int = 20, days: Optional[int] = None) -> int:
     """爬取指定公众号，返回成功保存的文章数。"""
-    log.info(f'=== 开始爬取: {account_name}（目标 {count} 篇）===')
+    day_scope = f'，最近 {days} 天' if days and days > 0 else ''
+    log.info(f'=== 开始爬取: {account_name}（目标 {count} 篇{day_scope}）===')
     saved = 0
+    cutoff = datetime.now() - timedelta(days=days) if days and days > 0 else None
     # 加载跨会话历史 URL + 标题，避免重复下载（同文章多 Sogou URL 场景）
     seen_urls, seen_titles = _load_seen_keys()
     log.debug(f'已有历史去重 URL {len(seen_urls)} 条，标题 {len(seen_titles)} 条')
 
     # 每个账号使用独立 Session（含独立 Cookie），确保链接 Token 一致
     sess = _make_session()
+    _warmup_sogou_session(sess)
 
     # ── biz 精确搜索：先用 type=1 查目标账号的唯一 biz，避免混入同品牌账号 ──
     biz = _lookup_account_biz(sess, account_name)
@@ -483,6 +654,7 @@ def crawl_account(account_name: str, count: int = 20) -> int:
         log.info('未找到 biz，使用关键词搜索（可能有同品牌账号混入）')
 
     consecutive_empty = 0
+    consecutive_old_pages = 0
     for page in range(1, 10):
         if saved >= count:
             break
@@ -496,10 +668,17 @@ def crawl_account(account_name: str, count: int = 20) -> int:
                 break
             continue
         consecutive_empty = 0  # 重置计数
+        page_has_recent = False
 
         for art in articles:
             if saved >= count:
                 break
+
+            if cutoff is not None:
+                art_dt = _parse_pub_date(art.get('pub_time', ''))
+                if art_dt is not None and art_dt < cutoff:
+                    continue
+                page_has_recent = True
 
             real_url = art.get('url', '')
             if not real_url or real_url in seen_urls:
@@ -524,12 +703,25 @@ def crawl_account(account_name: str, count: int = 20) -> int:
             if not data.get('publish_time'):
                 data['publish_time'] = art.get('pub_time', '')
 
+            if cutoff is not None:
+                data_dt = _parse_pub_date(data.get('publish_time', ''))
+                if data_dt is not None and data_dt < cutoff:
+                    log.debug(f'超出时间范围，跳过: {data.get("title", "")[:40]}')
+                    time.sleep(random.uniform(1, 2))
+                    continue
+                if data_dt is None:
+                    page_has_recent = True
+
             # ── 账号过滤：拒绝非目标账号的文章 ────────────────
             actual_account = data.get('account', '')
             if not _account_matches(actual_account, account_name):
                 log.warning(f'账号不符（目标={account_name!r} 实际={actual_account!r}），跳过')
                 time.sleep(random.uniform(1, 2))
                 continue
+
+            # 统一归一到目标账号名，避免别名差异导致 Dashboard 计数与预览不一致。
+            data['account_raw'] = actual_account
+            data['account'] = account_name
 
             # ── Bug7 过滤：技术内容低质文章 ─────────────────────
             ok, reason = _is_tech_relevant(data)
@@ -549,6 +741,15 @@ def crawl_account(account_name: str, count: int = 20) -> int:
             time.sleep(random.uniform(3, 7))
 
         # 翻页停顿
+        if cutoff is not None:
+            if not page_has_recent:
+                consecutive_old_pages += 1
+            else:
+                consecutive_old_pages = 0
+            if consecutive_old_pages >= 2:
+                log.info('连续 2 页未命中时间范围，提前停止翻页')
+                break
+
         time.sleep(random.uniform(5, 10))
 
     log.info(f'=== {account_name} 完成，共保存 {saved} 篇 ===')
@@ -582,6 +783,7 @@ if __name__ == '__main__':
     parser.add_argument('--accounts', nargs='+', help='公众号名称（可多个）')
     parser.add_argument('--seed', action='store_true', help='爬取 seed_accounts.yaml 全部账号')
     parser.add_argument('--count', type=int, default=20, help='每账号文章数（默认20）')
+    parser.add_argument('--days', type=int, default=0, help='仅抓取最近 N 天内容（0 表示不限）')
     args = parser.parse_args()
 
     if args.seed:
@@ -597,8 +799,9 @@ if __name__ == '__main__':
         sys.exit(1)
 
     total = 0
+    days = args.days if args.days > 0 else None
     for acct in accounts:
-        n = crawl_account(acct, args.count)
+        n = crawl_account(acct, args.count, days=days)
         total += n
         time.sleep(random.uniform(10, 20))  # 账号间随机冷却
 

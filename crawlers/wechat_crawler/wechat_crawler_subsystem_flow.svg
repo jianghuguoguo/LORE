@@ -1,0 +1,392 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1620" viewBox="0 0 2200 1620" role="img" aria-labelledby="title desc">
+  <title id="title">微信公众号爬虫子系统完整流程图</title>
+  <desc id="desc">展示微信公众号爬虫子系统的双轨采集、三通道发现、状态持久化、Dashboard 接口与数据回流闭环。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f8ff"/>
+      <stop offset="100%" stop-color="#e6eefc"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eef4ff"/>
+      <stop offset="100%" stop-color="#dce7fb"/>
+    </linearGradient>
+    <linearGradient id="header" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1f376d"/>
+      <stop offset="100%" stop-color="#446db6"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#446db6"/>
+      <stop offset="100%" stop-color="#6f92d8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#244170" flood-opacity="0.14"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#c9d7f3" stroke-width="1" opacity="0.35"/>
+    </pattern>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#355a9e"/>
+    </marker>
+    <marker id="arrowSoft" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#5f82cb"/>
+    </marker>
+    <style>
+      text {
+        font-family: "Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif;
+        fill: #16325b;
+      }
+      .title {
+        font-size: 34px;
+        font-weight: 700;
+      }
+      .subtitle {
+        font-size: 16px;
+        fill: #36568d;
+      }
+      .section-title {
+        font-size: 21px;
+        font-weight: 700;
+        fill: #ffffff;
+      }
+      .box-title {
+        font-size: 18px;
+        font-weight: 700;
+      }
+      .box-subtitle {
+        font-size: 14px;
+        font-weight: 600;
+        fill: #2b4b7f;
+      }
+      .body {
+        font-size: 14px;
+        fill: #27456f;
+      }
+      .tiny {
+        font-size: 12px;
+        fill: #406394;
+      }
+      .panel {
+        fill: url(#panel);
+        stroke: #9cb5e6;
+        stroke-width: 2;
+      }
+      .header {
+        fill: url(#header);
+      }
+      .box {
+        fill: #ffffff;
+        stroke: #7a9ad8;
+        stroke-width: 2;
+      }
+      .box-accent {
+        fill: #f8fbff;
+        stroke: #446db6;
+        stroke-width: 2.4;
+      }
+      .pill {
+        fill: #dce7fb;
+        stroke: #7f9fdd;
+        stroke-width: 1.5;
+      }
+      .data-box {
+        fill: #f5f8ff;
+        stroke: #5f82cb;
+        stroke-width: 2;
+      }
+      .flow {
+        fill: none;
+        stroke: #355a9e;
+        stroke-width: 3.2;
+        marker-end: url(#arrow);
+      }
+      .flow-soft {
+        fill: none;
+        stroke: #5f82cb;
+        stroke-width: 2.6;
+        marker-end: url(#arrowSoft);
+      }
+      .flow-dashed {
+        fill: none;
+        stroke: #6183c9;
+        stroke-width: 2.2;
+        stroke-dasharray: 8 8;
+        marker-end: url(#arrowSoft);
+      }
+      .legend-text {
+        font-size: 13px;
+        fill: #31517f;
+      }
+    </style>
+  </defs>
+
+  <rect width="2200" height="1620" fill="url(#bg)"/>
+  <rect width="2200" height="1620" fill="url(#grid)" opacity="0.35"/>
+
+  <g transform="translate(60 48)">
+    <text class="title">微信公众号爬虫子系统完整流程图</text>
+    <text class="subtitle" x="0" y="34">双轨采集 + 三通道发现 + 状态持久化 + Dashboard 管理闭环</text>
+    <text class="subtitle" x="0" y="58">主色基于给定深蓝色延展：#446db6 / #1f376d / #dce7fb</text>
+  </g>
+
+  <g transform="translate(1570 38)" filter="url(#shadow)">
+    <rect x="0" y="0" width="560" height="74" rx="18" class="box"/>
+    <line x1="26" y1="24" x2="96" y2="24" class="flow"/>
+    <text class="legend-text" x="110" y="28">主数据流 / 主控制流</text>
+    <line x1="26" y1="50" x2="96" y2="50" class="flow-dashed"/>
+    <text class="legend-text" x="110" y="54">配置注入 / 回流 / 异步调度</text>
+    <rect x="354" y="18" width="26" height="18" rx="8" class="pill"/>
+    <text class="legend-text" x="392" y="31">状态文件或中间产物</text>
+    <rect x="354" y="42" width="26" height="18" rx="6" class="data-box"/>
+    <text class="legend-text" x="392" y="55">核心落地数据</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="40" y="130" width="430" height="1430" rx="28" class="panel"/>
+    <rect x="40" y="130" width="430" height="64" rx="28" class="header"/>
+    <text class="section-title" x="74" y="171">入口 / 配置 / 种子治理</text>
+
+    <rect x="500" y="130" width="1080" height="940" rx="28" class="panel"/>
+    <rect x="500" y="130" width="1080" height="64" rx="28" class="header"/>
+    <text class="section-title" x="534" y="171">执行采集双轨</text>
+
+    <rect x="500" y="1095" width="1080" height="465" rx="28" class="panel"/>
+    <rect x="500" y="1095" width="1080" height="64" rx="28" class="header"/>
+    <text class="section-title" x="534" y="1136">来源发现与回流闭环</text>
+
+    <rect x="1610" y="130" width="550" height="1430" rx="28" class="panel"/>
+    <rect x="1610" y="130" width="550" height="64" rx="28" class="header"/>
+    <text class="section-title" x="1644" y="171">数据落地 / 对外服务</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="62" y="220" width="386" height="150" rx="20" class="box-accent"/>
+    <text class="box-title" x="86" y="252">dashboard/app.py</text>
+    <text class="box-subtitle" x="86" y="278">当前 Web 管理入口</text>
+    <text class="body" x="86" y="306">/api/wechat/seeds</text>
+    <text class="body" x="86" y="329">/api/wechat/crawl /status /articles</text>
+    <text class="tiny" x="86" y="354">实际调用的是 sogou_crawler.py，不直接拉起 ui_bot / mitmproxy</text>
+
+    <rect x="62" y="400" width="386" height="150" rx="20" class="box"/>
+    <text class="box-title" x="86" y="432">scheduler.py</text>
+    <text class="box-subtitle" x="86" y="458">原生微信采集调度核心</text>
+    <text class="body" x="86" y="486">crawl_account / batch_crawl / crawl_feed</text>
+    <text class="body" x="86" y="509">APScheduler + ThreadPoolExecutor + SQLite 断点</text>
+    <text class="tiny" x="86" y="534">也可定时触发 discovery_scheduler.run_full_discovery()</text>
+
+    <rect x="62" y="580" width="386" height="130" rx="20" class="box"/>
+    <text class="box-title" x="86" y="612">crawl_with_proxy.ps1</text>
+    <text class="box-subtitle" x="86" y="638">Windows 手动运维脚本</text>
+    <text class="body" x="86" y="666">设置系统代理 127.0.0.1:8080</text>
+    <text class="body" x="86" y="689">提示重启微信后调用 scheduler.py crawl</text>
+
+    <rect x="62" y="740" width="386" height="180" rx="20" class="box"/>
+    <text class="box-title" x="86" y="772">seed_accounts.yaml</text>
+    <text class="box-subtitle" x="86" y="798">种子账号库 / 白名单</text>
+    <text class="body" x="86" y="826">漏洞研究、红队、代码审计、威胁情报、媒体、CTF</text>
+    <text class="body" x="86" y="849">字段：name / tags / priority / notes</text>
+    <text class="tiny" x="86" y="874">既是 dashboard 可编辑输入，也是两条采集轨的账号来源</text>
+    <text class="tiny" x="86" y="897">auto_discovered 会被发现模块自动追加</text>
+
+    <rect x="62" y="950" width="386" height="190" rx="20" class="box"/>
+    <text class="box-title" x="86" y="982">config.py</text>
+    <text class="box-subtitle" x="86" y="1008">共享配置中心</text>
+    <text class="body" x="86" y="1036">WECHAT_CONFIG: Cookie / X-WeChat-Key / Biz / Pass Ticket</text>
+    <text class="body" x="86" y="1059">MITM_CONFIG: SAVE_DIR / QUEUE_FILE / RATE_LIMIT</text>
+    <text class="body" x="86" y="1082">ACTIVE_HOURS / TARGET_ACCOUNTS / COOLDOWN_FLAG</text>
+    <text class="tiny" x="86" y="1107">模式 A 为直连 HTTP 参数，模式 B 为 MITM + UI 自动化参数</text>
+
+    <rect x="62" y="1170" width="386" height="130" rx="20" class="box"/>
+    <text class="box-title" x="86" y="1202">run_discovery.py</text>
+    <text class="box-subtitle" x="86" y="1228">独立发现入口</text>
+    <text class="body" x="86" y="1256">手动运行通道 B / C，合并去重，可 auto-add</text>
+    <text class="body" x="86" y="1279">还可立即调用 sogou_crawler.py 回采新账号</text>
+
+    <rect x="62" y="1330" width="386" height="190" rx="20" class="box"/>
+    <text class="box-title" x="86" y="1362">系统边界</text>
+    <text class="box-subtitle" x="86" y="1388">这张图覆盖的微信公众号相关能力</text>
+    <text class="body" x="86" y="1416">1. 搜狗直采轨：搜狗搜索 + 文章抓取 + 技术过滤</text>
+    <text class="body" x="86" y="1439">2. 原生采集轨：PC 微信 + UI 自动化 + mitmproxy 截获</text>
+    <text class="body" x="86" y="1462">3. 三通道发现：搜狗发现 / 引用挖掘 / 社区同步</text>
+    <text class="tiny" x="86" y="1487">最终统一回流到种子库、文章库、审核队列和 Dashboard 展示层</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="530" y="220" width="490" height="180" rx="22" class="box-accent"/>
+    <text class="box-title" x="556" y="252">轨道 A: sogou_crawler.py</text>
+    <text class="box-subtitle" x="556" y="278">轻量即时直采，不依赖 PC 微信</text>
+    <text class="body" x="556" y="306">输入：Dashboard 选中账号 或 seed_accounts.yaml</text>
+    <text class="body" x="556" y="329">为每个账号创建独立 requests.Session</text>
+    <text class="body" x="556" y="352">可先做 biz 精确搜索，再进入文章搜索</text>
+    <text class="tiny" x="556" y="377">适合指定账号快速拉取，是 Dashboard 默认调用路径</text>
+
+    <rect x="530" y="430" width="490" height="190" rx="22" class="box"/>
+    <text class="box-title" x="556" y="462">搜狗检索与跳转解析</text>
+    <text class="box-subtitle" x="556" y="488">search_and_resolve_articles + _follow_sogou_link</text>
+    <text class="body" x="556" y="516">type=1 查公众号 / biz，type=2 查文章</text>
+    <text class="body" x="556" y="539">同一 Session 跟随 sogou /link?url=... 跳转</text>
+    <text class="body" x="556" y="562">解析 JS 拼接的 mp.weixin.qq.com/s 真链接</text>
+    <text class="tiny" x="556" y="587">被 antispider 拦截时等待 90 秒后重试一次</text>
+
+    <rect x="530" y="650" width="490" height="235" rx="22" class="box"/>
+    <text class="box-title" x="556" y="682">文章下载、过滤、去重、保存</text>
+    <text class="box-subtitle" x="556" y="708">fetch_article + _is_tech_relevant + save_article</text>
+    <text class="body" x="556" y="736">提取标题、作者、账号、发布时间、正文</text>
+    <text class="body" x="556" y="759">跨会话 URL / 标题去重，过滤非目标账号</text>
+    <text class="body" x="556" y="782">正文过短、噪声标题、低技术含量文章会被丢弃</text>
+    <text class="body" x="556" y="805">产出统一 JSON：site=wechat, captured_at, publish_time</text>
+    <text class="tiny" x="556" y="830">账号级随机冷却，完成后会自动触发通道 B 引用挖掘</text>
+
+    <rect x="530" y="915" width="490" height="125" rx="22" class="pill"/>
+    <text class="box-title" x="556" y="948">搜狗轨特点</text>
+    <text class="body" x="556" y="976">优点：零客户端依赖、适合 Web 调用</text>
+    <text class="body" x="556" y="999">限制：受搜狗反爬、文章完整性依赖公开可访问页面</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1060" y="220" width="490" height="180" rx="22" class="box-accent"/>
+    <text class="box-title" x="1086" y="252">轨道 B: scheduler.py 原生采集编排</text>
+    <text class="box-subtitle" x="1086" y="278">工业沉浸轨：模拟人工使用 PC 微信</text>
+    <text class="body" x="1086" y="306">加载 ACTIVE_HOURS、RATE_LIMIT、TARGET_ACCOUNTS</text>
+    <text class="body" x="1086" y="329">管理 crawl_state.db 断点，处理 cooldown.flag 冷却</text>
+    <text class="body" x="1086" y="352">调用 WeChatUIBot.browse_account / browse_subscription_feed</text>
+    <text class="tiny" x="1086" y="377">适合长期运行和高完整度原生流量采集</text>
+
+    <rect x="1060" y="430" width="490" height="190" rx="22" class="box"/>
+    <text class="box-title" x="1086" y="462">PC 微信 + ui_bot.py</text>
+    <text class="box-subtitle" x="1086" y="488">Win32 窗口定位 + pyautogui 点击</text>
+    <text class="body" x="1086" y="516">Ctrl+F 搜索公众号，或进入“订阅号消息”聚合页</text>
+    <text class="body" x="1086" y="539">在主内容区逐篇点击文章卡片</text>
+    <text class="body" x="1086" y="562">每点击一次就等待真实页面加载，再 Esc / Alt+Left 返回</text>
+    <text class="tiny" x="1086" y="587">offset + progress_callback 支持断点续爬</text>
+
+    <rect x="1060" y="650" width="490" height="215" rx="22" class="box"/>
+    <text class="box-title" x="1086" y="682">interceptor.py / mitmproxy</text>
+    <text class="box-subtitle" x="1086" y="708">只截获 mp.weixin.qq.com/s HTML 响应</text>
+    <text class="body" x="1086" y="736">解析标题、作者、公众号名、发布时间、正文 markdown</text>
+    <text class="body" x="1086" y="759">URL 归一化去重：__biz + mid + idx + sn</text>
+    <text class="body" x="1086" y="782">检测 403 / verify / 环境异常，必要时写入 cooldown.flag</text>
+    <text class="body" x="1086" y="805">计算 completeness_score，低完整性仍保存但标记</text>
+    <text class="tiny" x="1086" y="830">这是“真实微信流量”落盘的大脑</text>
+
+    <rect x="1060" y="895" width="490" height="145" rx="22" class="box"/>
+    <text class="box-title" x="1086" y="927">状态文件 / 中间产物</text>
+    <text class="body" x="1086" y="955">crawl_state.db: 每个账号 offset 断点</text>
+    <text class="body" x="1086" y="978">captured_queue.jsonl: 拦截结果队列文件</text>
+    <text class="body" x="1086" y="1001">seen_urls.txt + cooldown.flag: 去重与风控冷却信号</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1640" y="220" width="490" height="180" rx="22" class="data-box"/>
+    <text class="box-title" x="1668" y="252">raw_data/wechat/*.json</text>
+    <text class="box-subtitle" x="1668" y="278">统一文章落地目录</text>
+    <text class="body" x="1668" y="306">两条采集轨都会写入统一 schema 的 JSON 文章文件</text>
+    <text class="body" x="1668" y="329">字段核心：title / account / publish_time / content / url</text>
+    <text class="body" x="1668" y="352">既是 Dashboard 文章展示源，也是通道 B 引用挖掘原料</text>
+
+    <rect x="1640" y="430" width="490" height="140" rx="22" class="data-box"/>
+    <text class="box-title" x="1668" y="462">captured_queue.jsonl / seen_urls.txt</text>
+    <text class="box-subtitle" x="1668" y="488">拦截轨附属文件</text>
+    <text class="body" x="1668" y="516">供消费者轮询、URL 持久化去重与异常恢复</text>
+    <text class="tiny" x="1668" y="541">主要来自 interceptor.py</text>
+
+    <rect x="1640" y="600" width="490" height="150" rx="22" class="box"/>
+    <text class="box-title" x="1668" y="632">Dashboard 读写接口</text>
+    <text class="box-subtitle" x="1668" y="658">管理种子、发起搜狗采集、查看文章</text>
+    <text class="body" x="1668" y="686">读 seed_accounts.yaml 统计分类与 article_count</text>
+    <text class="body" x="1668" y="709">展示 raw_data/wechat 文章列表、预览与运行状态</text>
+    <text class="tiny" x="1668" y="734">Web 层主要围绕“搜狗直采”这条路径构建</text>
+
+    <rect x="1640" y="780" width="490" height="150" rx="22" class="data-box"/>
+    <text class="box-title" x="1668" y="812">raw_data/discovery/*.json</text>
+    <text class="box-subtitle" x="1668" y="838">发现产物</text>
+    <text class="body" x="1668" y="866">channel_b_candidates / channel_c_candidates / merged_candidates</text>
+    <text class="body" x="1668" y="889">为人工审核、质量评估和回流分析提供证据链</text>
+
+    <rect x="1640" y="960" width="490" height="120" rx="22" class="data-box"/>
+    <text class="box-title" x="1668" y="992">data/discovery_review_queue.jsonl</text>
+    <text class="box-subtitle" x="1668" y="1018">待人工审核队列</text>
+    <text class="body" x="1668" y="1046">评分在 REVIEW_THRESHOLD 与 AUTO_ADD_THRESHOLD 之间的候选账号</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="530" y="1185" width="300" height="165" rx="22" class="box"/>
+    <text class="box-title" x="556" y="1217">通道 A: sogou_discovery.py</text>
+    <text class="box-subtitle" x="556" y="1243">搜狗搜索驱动的账号发现</text>
+    <text class="body" x="556" y="1271">关键词池：内网渗透、漏洞复现、0day、CobaltStrike...</text>
+    <text class="body" x="556" y="1294">type=1 直接搜公众号，type=2 从文章来源反推账号</text>
+    <text class="tiny" x="556" y="1319">低成本高频补种子</text>
+
+    <rect x="890" y="1185" width="300" height="165" rx="22" class="box"/>
+    <text class="box-title" x="916" y="1217">通道 B: citation_extractor.py</text>
+    <text class="box-subtitle" x="916" y="1243">文章引用挖掘</text>
+    <text class="body" x="916" y="1271">从已保存微信文章中提取“转载自 / 来源 / 作者 | 公众号名”</text>
+    <text class="body" x="916" y="1294">同时提取原文链接中的 __biz 线索</text>
+    <text class="tiny" x="916" y="1319">高精度“以爬养爬”扩散</text>
+
+    <rect x="1250" y="1185" width="300" height="165" rx="22" class="box"/>
+    <text class="box-title" x="1276" y="1217">通道 C: community_sync.py</text>
+    <text class="box-subtitle" x="1276" y="1243">社区交叉验证</text>
+    <text class="body" x="1276" y="1271">抓取 GitHub 安全资源清单，配合 DeepSeek 或正则提取公众号</text>
+    <text class="body" x="1276" y="1294">为候选集补充高可信来源说明</text>
+    <text class="tiny" x="1276" y="1319">低频但高可信的精选通道</text>
+
+    <rect x="820" y="1390" width="450" height="135" rx="24" class="box-accent"/>
+    <text class="box-title" x="850" y="1422">discovery_scheduler.py</text>
+    <text class="box-subtitle" x="850" y="1448">三通道并行、去重、评分、门控</text>
+    <text class="body" x="850" y="1476">quick_score + AccountQualityScorer 内容评分 → grade A/B/C/D</text>
+    <text class="body" x="850" y="1499">score ≥ AUTO_ADD_THRESHOLD 自动加入种子；中间分数写入 review_queue</text>
+  </g>
+
+  <g>
+    <path d="M 448 295 C 486 295, 486 295, 530 295" class="flow"/>
+    <path d="M 448 475 C 720 475, 860 475, 1060 310" class="flow"/>
+    <path d="M 448 645 C 760 645, 930 645, 1060 500" class="flow"/>
+
+    <path d="M 448 810 C 500 810, 500 282, 530 282" class="flow-dashed"/>
+    <path d="M 448 810 C 780 810, 930 810, 1060 282" class="flow-dashed"/>
+    <path d="M 448 1040 C 520 1040, 520 298, 530 298" class="flow-dashed"/>
+    <path d="M 448 1040 C 820 1040, 1000 1040, 1180 880" class="flow-dashed"/>
+    <path d="M 448 1235 C 560 1235, 650 1235, 680 1235" class="flow"/>
+
+    <path d="M 775 400 L 775 430" class="flow"/>
+    <path d="M 775 620 L 775 650" class="flow"/>
+    <path d="M 775 885 L 775 915" class="flow-soft"/>
+
+    <path d="M 1305 400 L 1305 430" class="flow"/>
+    <path d="M 1305 620 L 1305 650" class="flow"/>
+    <path d="M 1305 865 L 1305 895" class="flow"/>
+
+    <path d="M 1020 768 C 1240 768, 1440 310, 1640 310" class="flow"/>
+    <path d="M 1550 758 C 1590 758, 1605 310, 1640 310" class="flow"/>
+    <path d="M 1550 968 C 1600 968, 1600 500, 1640 500" class="flow-soft"/>
+    <path d="M 2130 330 C 1510 330, 1510 1268, 1190 1268" class="flow-soft"/>
+    <path d="M 2130 500 C 2148 500, 2148 675, 2130 675" class="flow-soft"/>
+
+    <path d="M 680 1350 L 680 1390" class="flow"/>
+    <path d="M 1040 1350 L 1040 1390" class="flow"/>
+    <path d="M 1400 1350 L 1180 1390" class="flow"/>
+
+    <path d="M 1270 1458 C 1480 1458, 1500 840, 1640 840" class="flow"/>
+    <path d="M 820 1458 C 650 1458, 450 1458, 450 830" class="flow"/>
+    <path d="M 1190 1525 C 1190 1560, 255 1560, 255 920" class="flow-dashed"/>
+    <path d="M 1100 1390 C 1100 1340, 1100 1340, 1100 1290" class="flow-dashed"/>
+    <path d="M 980 765 C 1030 765, 1080 765, 1080 1270" class="flow-dashed"/>
+    <path d="M 775 1040 C 775 1110, 1040 1110, 1040 1185" class="flow-dashed"/>
+  </g>
+
+  <g>
+    <rect x="720" y="103" width="180" height="30" rx="15" class="pill" opacity="0.95"/>
+    <text class="tiny" x="744" y="123">Dashboard 默认采集轨</text>
+
+    <rect x="1220" y="103" width="188" height="30" rx="15" class="pill" opacity="0.95"/>
+    <text class="tiny" x="1243" y="123">原生微信高完整度采集轨</text>
+
+    <rect x="1850" y="1122" width="220" height="34" rx="17" class="pill" opacity="0.95"/>
+    <text class="tiny" x="1875" y="1144">审核 / 证据 / 展示三类输出</text>
+
+    <text class="tiny" x="1092" y="1208">每日或按需运行</text>
+    <text class="tiny" x="1012" y="1097">sogou_crawler 结束后可自动触发通道 B</text>
+    <text class="tiny" x="1504" y="1105">scheduler 内也可 per-crawl 触发 citation_only</text>
+    <text class="tiny" x="1654" y="1120">评分门控将“新发现账号”分流为自动收录或待审核</text>
+  </g>
+</svg>

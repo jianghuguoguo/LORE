@@ -84,6 +84,24 @@ async function api(url) {
   }
 }
 
+async function apiPost(url, body = {}) {
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      console.error(`API POST ${url} => HTTP ${r.status}`);
+      return { success: false, message: `HTTP ${r.status}` };
+    }
+    return r.json();
+  } catch (e) {
+    console.error(`API POST ${url} error:`, e);
+    return { success: false, message: String(e) };
+  }
+}
+
 /* ══════════════════════════════════════════════════════════
    OVERVIEW
 ═══════════════════════════════════════════════════════════ */
@@ -422,73 +440,206 @@ async function loadSessions() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   PIPELINE PAGE
+   THEME TOGGLE
 ═══════════════════════════════════════════════════════════ */
+function toggleTheme() {
+  const html    = document.documentElement;
+  const isDark  = html.getAttribute('data-theme') !== 'light';
+  const newTheme = isDark ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('lore-theme', newTheme);
+  const icon = document.getElementById('themeIcon');
+  if (icon) icon.className = newTheme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
+  // 强制重绘 echarts 图表（主题变化时颜色不自动刷新）
+  if (typeof echarts !== 'undefined') {
+    document.querySelectorAll('[id^="chart"]').forEach(el => {
+      const c = echarts.getInstanceByDom(el);
+      if (c) c.resize();
+    });
+  }
+}
+
+function _applyStoredTheme() {
+  const stored = localStorage.getItem('lore-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', stored);
+  const icon = document.getElementById('themeIcon');
+  if (icon) icon.className = stored === 'light' ? 'fas fa-sun' : 'fas fa-moon';
+}
+
+/* ══════════════════════════════════════════════════════════
+   PIPELINE PAGE (Lore 分阶段流水线)
+═══════════════════════════════════════════════════════════ */
+const LORE_STAGES = [
+  { key: 'layer0',    label: 'Layer 0  日志标准化' },
+  { key: 'layer1',    label: 'Layer 1  LLM 会话标注' },
+  { key: 'layer2',    label: 'Layer 2  经验蒸馏' },
+  { key: 'layer3_p12',label: 'Layer 3  Phase 1+2  SEC/EWC' },
+  { key: 'layer3_p34',label: 'Layer 3  Phase 3+4  RME/BCC' },
+  { key: 'layer3_p5', label: 'Layer 3  Phase 5    KLM' },
+  { key: 'layer4',    label: 'Layer 4  缺口感知 + 冲突检测' },
+  { key: 'upload',    label: 'Upload   同步至 RAGflow' },
+];
+
+const STATUS_ICON = {
+  done:    '<i class="fas fa-check" style="color:var(--pos)"></i>',
+  failed:  '<i class="fas fa-xmark" style="color:var(--neg)"></i>',
+  running: '<i class="fas fa-spinner fa-spin" style="color:var(--meta)"></i>',
+  pending: '<i class="fas fa-circle" style="color:var(--text-dim);font-size:8px"></i>',
+  skipped: '<i class="fas fa-minus" style="color:var(--text-dim)"></i>',
+};
+
+let _loreSelectedStages = new Set(LORE_STAGES.map(s => s.key));
+let _lorePipelinePoller = null;
+let _lorePipelineRunning = false;
+
+function lorePipelineSelectAll(flag) {
+  LORE_STAGES.forEach(s => flag ? _loreSelectedStages.add(s.key) : _loreSelectedStages.delete(s.key));
+  _renderLoreStages([]);
+}
+
+function toggleLoreStage(key) {
+  if (_loreSelectedStages.has(key)) _loreSelectedStages.delete(key);
+  else _loreSelectedStages.add(key);
+  _renderLoreStages([]);
+}
+
+function _renderLoreStages(stagesInfo) {
+  const grid = document.getElementById('plStagesGrid');
+  if (!grid) return;
+
+  const infoByKey = {};
+  (stagesInfo || []).forEach(s => { infoByKey[s.key] = s; });
+
+  grid.innerHTML = LORE_STAGES.map(s => {
+    const info    = infoByKey[s.key] || {};
+    const status  = info.status || 'pending';
+    const selected = _loreSelectedStages.has(s.key);
+    const statusIcon = STATUS_ICON[status] || STATUS_ICON.pending;
+    const elapsed = info.elapsed ? `${info.elapsed.toFixed(1)}s` : '';
+    const statusCls = status !== 'pending' ? `stage-${status}` : '';
+    const noScript  = info.script_exists === false ? ' style="opacity:.5"' : '';
+
+    return `
+    <div class="pipeline-stage-card ${selected ? 'selected' : ''} ${statusCls}"
+         onclick="toggleLoreStage('${s.key}')"${noScript}>
+      <div class="psc-header">
+        <div class="psc-select-dot"></div>
+        <div class="psc-status-icon">${statusIcon}</div>
+      </div>
+      <div class="psc-label">${s.label}</div>
+      <div class="psc-key">${s.key}</div>
+      ${elapsed ? `<div class="psc-elapsed"><i class="fas fa-clock" style="font-size:9px"></i> ${elapsed}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
 async function loadPipelineStatus() {
-  const data = await api('/api/pipeline/full/status');
+  const data = await api('/api/pipeline/lore/status');
   if (!data.success) return;
 
   const dot   = document.getElementById('pipelineDot');
   const label = document.getElementById('pipelineLabel');
   const btn   = document.getElementById('btnRunPipeline');
 
+  const isRunning = data.running;
+  _lorePipelineRunning = isRunning;
+
   // Topbar
-  dot.className     = 'status-dot ' + (data.running ? 'running' : 'idle');
-  label.textContent = data.running
-    ? (data.current_step ? data.current_step.slice(0, 16) + '…' : '反思中…')
+  dot.className     = 'status-dot ' + (isRunning ? 'running' : 'idle');
+  label.textContent = isRunning
+    ? (data.current_step ? data.current_step.slice(0, 18) + '…' : '运行中…')
     : (data.last_run ? `完成 ${data.last_run.slice(0,16)}` : 'Idle');
 
-  // Pipeline page
-  document.getElementById('plStatus').innerHTML =
-    `<i class="fas fa-circle" style="color:${data.running ? 'var(--pos)' : 'var(--text-dim)'}"></i> ${data.running ? '运行中 — ' + (data.current_step||'') : '空闲'}`;
-  document.getElementById('plLastRun').innerHTML =
+  // Pipeline page info row
+  const plStatus  = document.getElementById('plStatus');
+  const plLastRun = document.getElementById('plLastRun');
+  if (plStatus) plStatus.innerHTML =
+    `<i class="fas fa-circle" style="color:${isRunning ? 'var(--pos)' : 'var(--text-dim)'}"></i> ${isRunning ? '运行中 — ' + (data.current_step || '') : '空闲'}`;
+  if (plLastRun) plLastRun.innerHTML =
     `<i class="fas fa-clock"></i> ${data.last_run ? data.last_run.slice(0,16).replace('T',' ') : '从未运行'}`;
 
-  if (data.last_output) {
-    document.getElementById('plOutput').textContent = data.last_output;
+  // Stage cards
+  _renderLoreStages(data.stages || []);
+
+  // Live log
+  const plOut = document.getElementById('plOutput');
+  const plInd = document.getElementById('plLiveIndicator');
+  if (plOut && data.live_log) {
+    const atBottom = plOut.scrollHeight - plOut.scrollTop - plOut.clientHeight < 40;
+    plOut.textContent = data.live_log;
+    if (atBottom || isRunning) plOut.scrollTop = plOut.scrollHeight;
   }
-  if (data.last_error) {
-    document.getElementById('plErrBlock').style.display = '';
-    document.getElementById('plError').textContent = data.last_error;
-  } else {
-    document.getElementById('plErrBlock').style.display = 'none';
+  if (plInd) {
+    if (isRunning) {
+      plInd.innerHTML = '<i class="fas fa-circle" style="color:var(--pos);animation:pulse 1s infinite"></i> 实时更新中…';
+    } else if (data.last_run) {
+      plInd.textContent = `完成于 ${data.last_run.slice(0,16).replace('T',' ')}`;
+    } else {
+      plInd.textContent = '';
+    }
   }
 
-  btn.disabled = data.running;
+  if (btn) btn.disabled = isRunning;
+  const loreBtn = document.getElementById('btnLorePipelineRun');
+  if (loreBtn) loreBtn.disabled = isRunning;
 }
 
-let _pipelinePoller = null;
+async function runLorePipeline() {
+  const stages = [..._loreSelectedStages];
+  if (!stages.length) { alert('请至少选择一个阶段'); return; }
 
-async function runPipeline() {
-  const btn = document.getElementById('btnRunPipeline');
-  btn.disabled = true;
+  const noRagflow = document.getElementById('plOptNoRagflow')?.checked || false;
+  const verbose   = document.getElementById('plOptVerbose')?.checked   || false;
 
-  const resp = await fetch('/api/pipeline/full', { method: 'POST' }).then(r => r.json());
-  if (!resp.success) { alert(resp.message); btn.disabled = false; return; }
+  const btn = document.getElementById('btnLorePipelineRun');
+  if (btn) btn.disabled = true;
 
-  // update topbar immediately
+  // 判断是否全选（全选时 stages 传空，让后端运行全部）
+  const allSelected = stages.length === LORE_STAGES.length;
+
+  const resp = await fetch('/api/pipeline/lore/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stages: allSelected ? [] : stages, no_ragflow: noRagflow, verbose }),
+  }).then(r => r.json());
+
+  if (!resp.success) { alert(resp.message); if (btn) btn.disabled = false; return; }
+
+  // 立即更新 topbar
   document.getElementById('pipelineDot').className = 'status-dot running';
-  document.getElementById('pipelineLabel').textContent = '反思中…';
+  document.getElementById('pipelineLabel').textContent = '运行中…';
 
-  // poll every 3s
-  clearInterval(_pipelinePoller);
-  _pipelinePoller = setInterval(async () => {
-    const st = await api('/api/pipeline/full/status');
-    if (!st.running) {
-      clearInterval(_pipelinePoller);
-      btn.disabled = false;
-      // 刷新流水线页状态
+  const plOut = document.getElementById('plOutput');
+  if (plOut) plOut.textContent = '正在启动流水线…\n';
+
+  // 轮询日志与状态
+  clearInterval(_lorePipelinePoller);
+  _lorePipelinePoller = setInterval(async () => {
+    await loadPipelineStatus();
+    if (!_lorePipelineRunning) {
+      clearInterval(_lorePipelinePoller);
       document.getElementById('pipelineDot').className = 'status-dot idle';
-      document.getElementById('pipelineLabel').textContent = st.last_run ? `完成 ${st.last_run.slice(0,16)}` : 'Idle';
-      if (currentPage === 'pipeline') loadPipelineStatus();
       if (currentPage === 'overview') loadOverview();
       if (currentPage === 'consolidated') loadConsolidated();
-    } else {
-      const step = st.current_step || '反思中';
-      document.getElementById('pipelineLabel').textContent = step.slice(0, 16) + '…';
     }
-  }, 3000);
+  }, 2000);
 }
+
+async function runPipeline() {
+  // 顶栏"开启反思"按钮：转发到 lore pipeline 并选中 Layer1~Layer3 阶段
+  _loreSelectedStages = new Set(['layer1', 'layer2', 'layer3_p12', 'layer3_p34', 'layer3_p5']);
+  if (currentPage !== 'pipeline') navigate('pipeline');
+  await runLorePipeline();
+}
+
+async function lorePipelineReset() {
+  if (!confirm('确认清除所有阶段状态记录？')) return;
+  const resp = await fetch('/api/pipeline/lore/reset', { method: 'POST' }).then(r => r.json());
+  if (!resp.success) { alert(resp.message); return; }
+  await loadPipelineStatus();
+}
+
+let _pipelinePoller = null;  // 保留兼容旧引用
 
 /* ══════════════════════════════════════════════════════════
    CRAWLER MANAGER
@@ -502,11 +653,14 @@ let _selectedRepos = new Set();     // 当前选中的外部知识库
 
 async function loadCrawler() {
   await Promise.all([
-    loadWechatSeeds(), loadWechatCrawlStatus(),
+    loadWechatSeeds(), loadWechatRuntimeConfig(), loadWechatNativeStatus(), loadWechatCrawlStatus(),
     loadCrawlerSources(), loadCrawlerStatus(),
     loadSyncRepos(), loadSyncStatus(), loadRawData(),
     loadRssStatus()
   ]);
+
+  clearInterval(_wechatNativePoller);
+  _wechatNativePoller = setInterval(loadWechatNativeStatus, 5000);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -515,6 +669,9 @@ async function loadCrawler() {
 let _wechatCategories = {};        // { cat: { label, accounts:[...] } }
 let _wechatSelectedAccounts = new Set();
 let _wechatCrawlPoller = null;
+let _wechatNativePoller = null;
+let _wechatRuntimeConfig = null;
+let _wechatNativeStatus = null;
 
 const WECHAT_PRIORITY_CLASS = { high: 'p-high', normal: 'p-normal', low: 'p-low' };
 
@@ -540,6 +697,7 @@ function renderWechatCards() {
   const grid = document.getElementById('wechatSeedGrid');
   const cats = _wechatCategories;
   const catKeys = Object.keys(cats);
+  const quickDays = parseInt(document.getElementById('wechatCrawlDays')?.value, 10) || 7;
 
   if (!catKeys.length) {
     grid.innerHTML = '<div style="color:var(--text-dim);padding:10px;font-size:12px">无种子账号</div>';
@@ -566,6 +724,10 @@ function renderWechatCards() {
              <i class="fas fa-eye"></i>
            </button>`
         : '';
+      const quickCrawlBtn = `<button class="acc-crawl-btn" title="抓取 ${quickDays} 天内内容"
+                  onclick="wechatQuickCrawlAccount(event,'${escHtml(acc.name)}')">
+             <i class="fas fa-bolt"></i> ${quickDays}天
+           </button>`;
       const tagsHtml = (acc.tags || []).slice(0, 3)
         .map(t => `<span style="font-size:9px;color:var(--text-dim)">${escHtml(t)}</span>`)
         .join(' · ');
@@ -573,6 +735,7 @@ function renderWechatCards() {
       html += `
       <div class="wechat-acc-card ${active ? 'acc-active' : ''}"
            onclick="toggleWechatAccount('${escHtml(acc.name)}')"
+         ondblclick="wechatQuickCrawlAccount(event,'${escHtml(acc.name)}')"
            title="${acc.notes ? escHtml(acc.notes) : escHtml(acc.name)}">
         <button class="acc-del-btn" title="从种子库移除"
                 onclick="wechatRemoveAccount(event,'${escHtml(acc.name)}','${escHtml(catKey)}')">×</button>
@@ -585,6 +748,7 @@ function renderWechatCards() {
         ${tagsHtml ? `<div style="font-size:9px;color:var(--text-dim);line-height:1.4;margin-top:1px">${tagsHtml}</div>` : ''}
         <div class="acc-footer">
           ${artLabel}
+          ${quickCrawlBtn}
           ${previewBtn}
         </div>
       </div>`;
@@ -615,27 +779,204 @@ function wechatSelectAll(flag) {
   renderWechatCards();
 }
 
+function _setInputValue(id, value) {
+  const el = document.getElementById(id);
+  if (el && value !== undefined && value !== null) el.value = value;
+}
+
+function _setCheckedValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.checked = !!value;
+}
+
+function currentWechatMode() {
+  return document.getElementById('wechatMode')?.value || 'sogou';
+}
+
+function currentWechatCrawlDays() {
+  const val = parseInt(document.getElementById('wechatCrawlDays')?.value, 10);
+  if (!Number.isFinite(val) || val <= 0) return null;
+  return Math.min(val, 90);
+}
+
+async function loadWechatRuntimeConfig() {
+  const data = await api('/api/wechat/runtime_config');
+  if (!data.success) return;
+
+  const cfg = data.config || {};
+  const sogou = cfg.sogou || {};
+  const native = cfg.native || {};
+
+  _wechatRuntimeConfig = cfg;
+  _setInputValue('wechatMode', cfg.default_mode || 'sogou');
+  _setInputValue('wechatSogouProxyMode', sogou.proxy_mode || 'direct');
+  _setInputValue('wechatSogouProxyUrl', sogou.proxy_url || 'http://127.0.0.1:7890');
+  _setInputValue('wechatSearchDelayMin', sogou.search_delay_min ?? 1.8);
+  _setInputValue('wechatSearchDelayMax', sogou.search_delay_max ?? 3.4);
+  _setInputValue('wechatAntispiderMin', sogou.antispider_wait_min ?? 45);
+  _setInputValue('wechatAntispiderMax', sogou.antispider_wait_max ?? 75);
+  _setInputValue('wechatNativeProxyHost', native.proxy_host || '127.0.0.1');
+  _setInputValue('wechatNativeProxyPort', native.proxy_port ?? 8080);
+  _setCheckedValue('wechatNativeForce', native.scheduler_force !== false);
+  toggleWechatModePanel();
+}
+
+function collectWechatRuntimeConfig() {
+  const searchDelayMin = parseFloat(document.getElementById('wechatSearchDelayMin').value) || 1.8;
+  const antispiderMin = parseInt(document.getElementById('wechatAntispiderMin').value, 10) || 45;
+  return {
+    default_mode: currentWechatMode(),
+    sogou: {
+      proxy_mode: document.getElementById('wechatSogouProxyMode').value || 'direct',
+      proxy_url: (document.getElementById('wechatSogouProxyUrl').value || '').trim(),
+      search_delay_min: searchDelayMin,
+      search_delay_max: parseFloat(document.getElementById('wechatSearchDelayMax').value) || searchDelayMin,
+      antispider_wait_min: antispiderMin,
+      antispider_wait_max: parseInt(document.getElementById('wechatAntispiderMax').value, 10) || antispiderMin,
+    },
+    native: {
+      proxy_host: (document.getElementById('wechatNativeProxyHost').value || '').trim() || '127.0.0.1',
+      proxy_port: parseInt(document.getElementById('wechatNativeProxyPort').value, 10) || 8080,
+      scheduler_force: !!document.getElementById('wechatNativeForce').checked,
+    },
+  };
+}
+
+async function saveWechatRuntimeConfig(silent = false) {
+  const resp = await apiPost('/api/wechat/runtime_config', collectWechatRuntimeConfig());
+  if (!resp.success) {
+    if (!silent) alert(resp.message || '保存微信运行配置失败');
+    return false;
+  }
+  _wechatRuntimeConfig = resp.config || null;
+  if (!silent) alert(resp.message || '微信运行配置已保存');
+  await loadWechatNativeStatus();
+  toggleWechatModePanel();
+  return true;
+}
+
+function toggleWechatModePanel() {
+  const mode = currentWechatMode();
+  const btn = document.getElementById('btnWechatCrawl');
+  const sogouCard = document.getElementById('wechatSogouConfigCard');
+  const nativeCard = document.getElementById('wechatNativeConfigCard');
+
+  if (btn) {
+    btn.innerHTML = mode === 'native'
+      ? '<i class="fab fa-weixin"></i> 开始原生实跑'
+      : '<i class="fab fa-weixin"></i> 开始搜狗爬取';
+  }
+  sogouCard?.classList.toggle('is-active', mode === 'sogou');
+  nativeCard?.classList.toggle('is-active', mode === 'native');
+}
+
+function renderWechatNativeBadge(id, ok, okText, badText) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = `wechat-status-pill ${ok ? 'ok' : 'warn'}`;
+  el.textContent = ok ? okText : badText;
+}
+
+async function loadWechatNativeStatus() {
+  const data = await api('/api/wechat/native/status');
+  if (!data.success) return;
+  _wechatNativeStatus = data;
+
+  renderWechatNativeBadge('wechatMitmBadge', !!data.mitm_running, 'mitmdump 已启动', 'mitmdump 未启动');
+  renderWechatNativeBadge('wechatProxyBadge', !!data.proxy_ready, `系统代理 -> ${data.expected_proxy}`, '系统代理未就绪');
+  renderWechatNativeBadge('wechatClientBadge', !!data.wechat_running, 'PC 微信已检测到', '未检测到 PC 微信');
+
+  const summary = document.getElementById('wechatNativeSummary');
+  if (summary) {
+    summary.textContent = data.preflight?.length
+      ? `原生轨未就绪：${data.preflight.join('；')}`
+      : '原生轨已就绪，可以直接执行 scheduler crawl。';
+  }
+
+  const checklist = document.getElementById('wechatNativeChecklist');
+  if (checklist) {
+    const steps = [
+      { ok: !!data.mitm_running, text: '1. mitmdump 已运行并加载 interceptor.py' },
+      { ok: !!data.proxy_ready, text: `2. 系统代理已指向 ${data.expected_proxy}` },
+      { ok: !!data.wechat_running, text: '3. 检测到 PC 微信进程，请确认已登录' },
+    ];
+    if (data.mitm_log_tail) {
+      steps.push({ ok: true, text: `mitm 日志尾部：${data.mitm_log_tail.slice(-220)}` });
+    }
+    checklist.innerHTML = steps.map(s => `
+      <div class="wechat-native-step ${s.ok ? 'ok' : 'warn'}">
+        <i class="fas ${s.ok ? 'fa-circle-check' : 'fa-circle'}"></i>
+        <span>${escHtml(s.text)}</span>
+      </div>`).join('');
+  }
+}
+
+async function wechatNativeStartMitm() {
+  const saved = await saveWechatRuntimeConfig(true);
+  if (!saved) return;
+  const resp = await apiPost('/api/wechat/native/mitm/start');
+  alert(resp.message || (resp.success ? 'mitmdump 已启动' : '启动失败'));
+  await loadWechatNativeStatus();
+}
+
+async function wechatNativeStopMitm() {
+  const resp = await apiPost('/api/wechat/native/mitm/stop');
+  alert(resp.message || (resp.success ? 'mitmdump 已停止' : '停止失败'));
+  await loadWechatNativeStatus();
+}
+
+async function wechatNativeEnableProxy() {
+  const saved = await saveWechatRuntimeConfig(true);
+  if (!saved) return;
+  const resp = await apiPost('/api/wechat/native/proxy/enable');
+  alert(resp.message || (resp.success ? '系统代理已启用' : '设置失败'));
+  await loadWechatNativeStatus();
+}
+
+async function wechatNativeRestoreProxy() {
+  const resp = await apiPost('/api/wechat/native/proxy/restore');
+  alert(resp.message || (resp.success ? '系统代理已恢复' : '恢复失败'));
+  await loadWechatNativeStatus();
+}
+
 async function wechatCrawlRun() {
   const accounts = [..._wechatSelectedAccounts];
   if (!accounts.length) { alert('请至少选择一个公众号'); return; }
 
+  await _startWechatCrawl(accounts);
+}
+
+async function wechatQuickCrawlAccount(ev, accountName) {
+  ev.stopPropagation();
+  await _startWechatCrawl([accountName], true);
+}
+
+async function _startWechatCrawl(accounts, fromCard = false) {
+  if (!accounts.length) { alert('请至少选择一个公众号'); return; }
+
+  const saved = await saveWechatRuntimeConfig(true);
+  if (!saved) return;
+
   const count = parseInt(document.getElementById('wechatCrawlCount').value) || 10;
+  const days  = currentWechatCrawlDays();
+  const mode  = currentWechatMode();
   const btn   = document.getElementById('btnWechatCrawl');
   btn.disabled = true;
 
-  const resp = await fetch('/api/wechat/crawl', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accounts, count }),
-  }).then(r => r.json());
+  const payload = { accounts, count, mode };
+  if (days) payload.days = days;
+
+  const resp = await apiPost('/api/wechat/crawl', payload);
 
   if (!resp.success) { alert(resp.message); btn.disabled = false; return; }
 
+  const daysLabel = days ? `\n最近范围: ${days} 天` : '';
+  const accountLabel = fromCard ? `${accounts[0]}（卡片快捷）` : accounts.join(', ');
   document.getElementById('wechatDot').className      = 'status-dot running';
-  document.getElementById('wechatLabel').textContent  = `爬取中 — ${accounts.length} 个账号…`;
+  document.getElementById('wechatLabel').textContent  = `爬取中 · ${mode === 'native' ? '原生微信' : '搜狗直采'}${days ? ` · 最近${days}天` : ''} · ${accounts.length} 个账号…`;
   document.getElementById('wechatLogBlock').style.display = '';
   document.getElementById('wechatOutput').textContent =
-    `正在启动微信爬虫...\n账号: ${accounts.join(', ')}\n每号采集: ${count} 篇`;
+    `正在启动微信爬虫...\n模式: ${mode}\n账号: ${accountLabel}\n每号采集: ${count} 篇${daysLabel}`;
 
   clearInterval(_wechatCrawlPoller);
   _wechatCrawlPoller = setInterval(async () => {
@@ -656,11 +997,13 @@ async function loadWechatCrawlStatus() {
   const dot   = document.getElementById('wechatDot');
   const label = document.getElementById('wechatLabel');
   const btn   = document.getElementById('btnWechatCrawl');
+  const modeLabel = data.last_mode === 'native' ? '原生微信' : '搜狗直采';
+  const dayLabel = data.last_days ? ` · 最近${data.last_days}天` : '';
 
   dot.className   = `status-dot ${data.running ? 'running' : 'idle'}`;
   label.textContent = data.running
-    ? `爬取中 — ${(data.last_accounts || []).join(', ') || '…'}…`
-    : (data.last_run ? `完成 ${data.last_run.slice(0,16).replace('T',' ')}` : '空闲');
+    ? `爬取中 · ${modeLabel}${dayLabel} · ${(data.last_accounts || []).join(', ') || '…'}…`
+    : (data.last_run ? `${modeLabel}${dayLabel} 完成 ${data.last_run.slice(0,16).replace('T',' ')}` : '空闲');
   btn.disabled = data.running;
 
   if (data.last_output || data.last_error) {
@@ -1404,9 +1747,9 @@ ${(dr.IF || thenSteps.length || dr.NOT) ? `
         <th style="padding:5px 8px;text-align:left">命令</th>
         <th style="padding:5px 0;text-align:left">期望信号</th>
       </tr></thead><tbody>
-      ${nextActions.map(a => `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+      ${nextActions.map(a => `<tr style="border-bottom:1px solid var(--border)">
         <td style="padding:5px 8px 5px 0;color:var(--text-dim);white-space:nowrap">Step ${a.step}</td>
-        <td style="padding:5px 8px;font-family:var(--mono);color:#a8c7fa">${html(a.command || '')}</td>
+        <td style="padding:5px 8px;font-family:var(--mono);color:var(--term-accent)">${html(a.command || '')}</td>
         <td style="padding:5px 0;color:var(--text-muted);font-size:11px">${html(a.expected_signal || '')}</td>
       </tr>`).join('')}
       </tbody></table></div>` : ''}
@@ -1447,7 +1790,7 @@ ${c.command_template ? `
 ${c.original_command ? `
 <div class="modal-section">
   <div class="modal-section-title"><i class="fas fa-terminal" style="color:var(--text-dim)"></i> 原始命令</div>
-  <div class="code-block" style="border-color:var(--bg4);opacity:0.8">${html(c.original_command)}</div>
+  <div class="code-block" style="border-color:var(--term-border);opacity:0.92">${html(c.original_command)}</div>
 </div>` : ''}
 ${c.successful_command ? `
 <div class="modal-section">
@@ -1543,11 +1886,6 @@ ${Object.keys(phaseDist).length ? `
       </div>`;
     }).join('')}
   </div>
-</div>` : ''}
-${c.rag_effectiveness ? `
-<div class="modal-section">
-  <div class="modal-section-title"><i class="fas fa-database"></i> RAG 效用评估</div>
-  <div class="info-block" style="font-size:12px;line-height:1.7">${html(c.rag_effectiveness)}</div>
 </div>` : ''}`;
 }
 
@@ -1690,7 +2028,6 @@ const LAYER_BADGE_CLASS = {
   FACTUAL:        'lbadge-frule',
   METACOGNITIVE:  'lbadge-meta',
   CONCEPTUAL:     'lbadge-conc',
-  RAG_EVALUATION: 'lbadge-rag',
 };
 const LAYER_SHORT = {
   PROCEDURAL_NEG: 'NEG',
@@ -1698,7 +2035,6 @@ const LAYER_SHORT = {
   FACTUAL:        'FACTUAL',
   METACOGNITIVE:  'META',
   CONCEPTUAL:     'CONCEPTUAL',
-  RAG_EVALUATION: 'RAG_EVAL',
 };
 
 function renderConsCard (item) {
@@ -1801,22 +2137,6 @@ function renderConsContent (item) {
     return `
       ${d.core_insight ? '<div class="cons-content-section"><div class="cons-content-label">核心洞察</div><div class="cons-content-value">' + esc(d.core_insight) + '</div></div>' : ''}
       ${triggers ? '<div class="cons-content-section"><div class="cons-content-label">触发条件</div><div class="cons-tag-list">' + triggers + '</div></div>' : ''}`;
-  }
-
-  if (layer === 'RAG_EVALUATION') {
-    const pct = d.adoption_rate != null ? Math.round(d.adoption_rate * 100) : 0;
-    const avg = d.avg_bar != null ? d.avg_bar.toFixed(3) : '—';
-    const recs = (d.recommendations || []).slice(0,2).map(r => `<div style="font-size:11px;color:#fbbf24;margin-bottom:4px">⚠ ${esc(r)}</div>`).join('');
-    return `
-      <div class="cons-content-section">
-        <div class="cons-content-label">RAG 采纳率</div>
-        <div class="cons-rag-meter">
-          <div class="cons-rag-bar"><div class="cons-rag-fill" style="width:${pct}%"></div></div>
-          <span class="cons-rag-val">${pct}%</span>
-        </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">avg BAR score: <b style="color:var(--text)">${avg}</b>${d.bar_std != null ? ' ±' + d.bar_std.toFixed(3) : ''}</div>
-      </div>
-      ${recs ? '<div class="cons-content-section"><div class="cons-content-label">改进建议</div>' + recs + '</div>' : ''}`;
   }
 
   return `<div class="cons-content-section"><div class="cons-content-value">${esc(JSON.stringify(d).slice(0,200))}</div></div>`;
@@ -2122,6 +2442,12 @@ function fillGapCrawlInline(idx) {
    INIT
 ═══════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
+  // 恢复存储的主题
+  _applyStoredTheme();
+
+  // 初始化流水线页阶段卡片（空数据占位渲染）
+  _renderLoreStages([]);
+
   navigate('overview');
 
   // ESC 关闭 modal 和侧面板

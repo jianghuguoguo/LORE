@@ -23,6 +23,7 @@ import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from math import ceil
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -217,6 +218,7 @@ class PentestCrawlerScheduler:
         account_id:   str,
         account_name: str,
         target_count: int = 30,
+        days:         Optional[int] = None,
         force:        bool = False,
     ) -> dict:
         """
@@ -240,6 +242,13 @@ class PentestCrawlerScheduler:
         if offset:
             log.info(f'[{account_name}] 断点续爬，从 offset={offset} 开始')
 
+        effective_target = target_count
+        if days and days > 0:
+            # 原生轨无法精准按发布时间筛选，按经验值估算抓取量。
+            estimated_target = max(target_count, min(200, ceil(days * 12)))
+            effective_target = estimated_target
+            log.info(f'[{account_name}] 启用按天抓取（最近{days}天），估算目标篇数: {effective_target}')
+
         articles_clicked = 0
 
         def on_progress(delta: int) -> None:
@@ -256,10 +265,12 @@ class PentestCrawlerScheduler:
             bot.find_wechat_window()
             count = bot.browse_account(
                 account_name=account_name,
-                count=target_count - offset,
+                count=effective_target - offset,
                 offset=offset,
                 progress_callback=on_progress,
             )
+            if count <= 0 and effective_target > offset:
+                raise RuntimeError('未检测到新的拦截产物；请检查 mitmdump 证书、系统代理和 UI 点击定位是否生效')
             # 完整完成，清除断点
             self.db.clear(account_id)
             log.info(f'[{account_name}] 完成，共点击 {count} 篇')
@@ -278,6 +289,7 @@ class PentestCrawlerScheduler:
                 'account_name': account_name,
                 'crawled':      count,
                 'skipped':      offset,
+                'days':         days,
             }
         except Exception as exc:
             log.error(f'[{account_name}] 爬取异常（进度已保存，下次自动续爬）: {exc}', exc_info=True)
@@ -286,6 +298,7 @@ class PentestCrawlerScheduler:
                 'account_name': account_name,
                 'crawled':      articles_clicked,
                 'skipped':      offset,
+                'days':         days,
                 'error':        str(exc),
             }
 
@@ -309,6 +322,8 @@ class PentestCrawlerScheduler:
         try:
             bot.find_wechat_window()
             n = bot.browse_subscription_feed(count=count, progress_callback=on_progress)
+            if n <= 0 and count > 0:
+                raise RuntimeError('订阅号流点击未产生新的拦截产物，请检查代理与证书配置')
             return {'crawled': n}
         except Exception as exc:
             log.error(f'[Feed] 爬取异常: {exc}', exc_info=True)
@@ -320,6 +335,7 @@ class PentestCrawlerScheduler:
         self,
         accounts:     List[dict],
         target_count: int = 30,
+        days:         Optional[int] = None,
         force:        bool = False,
     ) -> List[dict]:
         """
@@ -333,7 +349,7 @@ class PentestCrawlerScheduler:
         futures = {
             self._pool.submit(
                 self.crawl_account,
-                a['id'], a['name'], target_count, force,
+                a['id'], a['name'], target_count, days, force,
             ): a
             for a in accounts
         }
@@ -437,6 +453,7 @@ if __name__ == '__main__':
     p_crawl = sub.add_parser('crawl', help='立即执行批量爬取')
     p_crawl.add_argument('--accounts', nargs='+', help='账号名称列表（不传则读 seed_accounts.yaml）')
     p_crawl.add_argument('--count', type=int, default=30, help='每账号采集篇数')
+    p_crawl.add_argument('--days', type=int, default=0, help='最近 N 天（原生轨按估算篇数执行）')
     p_crawl.add_argument('--force', action='store_true', help='跳过活跃时间窗口限制，立即执行')
 
     # discover 子命令
@@ -459,7 +476,8 @@ if __name__ == '__main__':
             print('⚠  没有找到账号，请在 seed_accounts.yaml 中配置或通过 --accounts 指定')
         else:
             print(f'开始爬取 {len(accounts)} 个账号...')
-            results = scheduler.batch_crawl(accounts, target_count=args.count, force=getattr(args, 'force', False))
+            days = args.days if getattr(args, 'days', 0) > 0 else None
+            results = scheduler.batch_crawl(accounts, target_count=args.count, days=days, force=getattr(args, 'force', False))
             for r in results:
                 print(r)
 

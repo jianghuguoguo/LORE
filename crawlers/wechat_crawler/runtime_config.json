@@ -1,0 +1,18 @@
+{
+  "default_mode": "native",
+  "sogou": {
+    "proxy_mode": "direct",
+    "proxy_url": "http://127.0.0.1:7890",
+    "proxy_host": "127.0.0.1",
+    "proxy_port": 7890,
+    "search_delay_min": 1.8,
+    "search_delay_max": 3.4,
+    "antispider_wait_min": 45,
+    "antispider_wait_max": 75
+  },
+  "native": {
+    "proxy_host": "127.0.0.1",
+    "proxy_port": 8080,
+    "scheduler_force": true
+  }
+}

@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="980" viewBox="0 0 2400 980" role="img" aria-labelledby="title desc">
+  <title id="title">微信公众号爬虫子系统精简流程图</title>
+  <desc id="desc">适合论文或答辩汇报的横向精简版微信公众号爬虫子系统流程图，透明背景，深蓝主色。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto">
+      <path d="M0,0 L14,7 L0,14 z" fill="#224a93"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#17315f" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      text {
+        font-family: "Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif;
+        fill: #16325b;
+      }
+      .title {
+        font-size: 40px;
+        font-weight: 700;
+      }
+      .subtitle {
+        font-size: 20px;
+        fill: #35568c;
+      }
+      .group-title {
+        font-size: 24px;
+        font-weight: 700;
+        fill: #224a93;
+      }
+      .box-title {
+        font-size: 24px;
+        font-weight: 700;
+      }
+      .body {
+        font-size: 18px;
+        fill: #36527e;
+      }
+      .note {
+        font-size: 16px;
+        fill: #48658f;
+      }
+      .panel {
+        fill: none;
+        stroke: #224a93;
+        stroke-width: 2.2;
+      }
+      .box {
+        fill: #ffffff;
+        stroke: #224a93;
+        stroke-width: 2.4;
+      }
+      .box-dark {
+        fill: #224a93;
+        stroke: #224a93;
+        stroke-width: 2.4;
+      }
+      .box-dark-text {
+        fill: #ffffff;
+        font-size: 24px;
+        font-weight: 700;
+      }
+      .flow {
+        fill: none;
+        stroke: #224a93;
+        stroke-width: 3.4;
+        marker-end: url(#arrow);
+      }
+      .flow-dashed {
+        fill: none;
+        stroke: #224a93;
+        stroke-width: 2.6;
+        stroke-dasharray: 10 8;
+        marker-end: url(#arrow);
+      }
+    </style>
+  </defs>
+
+  <g transform="translate(70 54)">
+    <text class="title">微信公众号爬虫子系统精简流程图</text>
+    <text class="subtitle" x="0" y="36">双轨采集、统一落地、发现回流</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="140" width="500" height="720" rx="26" class="panel"/>
+    <text class="group-title" x="98" y="178">1. 输入与控制</text>
+
+    <rect x="105" y="215" width="430" height="124" rx="20" class="box"/>
+    <text class="box-title" x="135" y="255">Dashboard / 手工入口</text>
+    <text class="body" x="135" y="292">管理种子、启动采集、查看结果</text>
+    <text class="body" x="135" y="320">也可直接运行 scheduler.py / run_discovery.py</text>
+
+    <rect x="105" y="372" width="430" height="132" rx="20" class="box"/>
+    <text class="box-title" x="135" y="430">配置与种子库</text>
+    <text class="body" x="135" y="463">config.py 统一管理代理、限速与运行参数</text>
+    <text class="body" x="135" y="491">seed_accounts.yaml 维护目标账号与回流账号</text>
+
+    <rect x="105" y="538" width="430" height="196" rx="20" class="box-dark"/>
+    <text class="box-dark-text" x="135" y="617">核心分流</text>
+    <text class="note" x="135" y="656" fill="#ffffff">A. 搜狗直采轨：轻量、易触发</text>
+    <text class="note" x="135" y="690" fill="#ffffff">B. 原生微信轨：真实流量、完整度高</text>
+    <text class="note" x="135" y="724" fill="#ffffff">C. 发现闭环：自动扩充公众号种子</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="650" y="140" width="760" height="720" rx="26" class="panel"/>
+    <text class="group-title" x="678" y="178">2. 双轨采集</text>
+
+    <rect x="695" y="220" width="670" height="210" rx="22" class="box"/>
+    <text class="box-title" x="725" y="260">轨道 A: sogou_crawler.py</text>
+    <text class="body" x="725" y="302">搜狗检索账号与文章，解析真实微信链接</text>
+    <text class="body" x="725" y="336">下载正文并完成过滤、去重、保存</text>
+    <text class="body" x="725" y="370">当前 Dashboard 的默认采集路径</text>
+    <text class="note" x="725" y="404">输入：账号列表  输出：文章 JSON</text>
+
+    <rect x="695" y="500" width="670" height="245" rx="22" class="box"/>
+    <text class="box-title" x="725" y="570">轨道 B: scheduler.py + ui_bot.py + interceptor.py</text>
+    <text class="body" x="725" y="612">scheduler.py 负责调度、断点与冷却控制</text>
+    <text class="body" x="725" y="646">ui_bot.py 自动操作 PC 微信逐篇打开文章</text>
+    <text class="body" x="725" y="680">interceptor.py 截获真实响应并解析正文</text>
+    <text class="note" x="725" y="718">输出：文章 JSON + 状态文件</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1490" y="140" width="360" height="720" rx="26" class="panel"/>
+    <text class="group-title" x="1518" y="178">3. 统一数据沉淀</text>
+
+    <rect x="1525" y="255" width="290" height="150" rx="22" class="box-dark"/>
+    <text class="box-dark-text" x="1556" y="298">raw_data/wechat</text>
+    <text class="note" x="1556" y="338" fill="#ffffff">统一文章 JSON 库</text>
+    <text class="note" x="1556" y="370" fill="#ffffff">展示、分析、发现三类流程的共同输入</text>
+
+    <rect x="1525" y="445" width="290" height="118" rx="22" class="box"/>
+    <text class="box-title" x="1556" y="510">Dashboard 展示层</text>
+    <text class="body" x="1556" y="544">按账号展示文章、统计数量与运行状态</text>
+
+    <rect x="1525" y="605" width="290" height="118" rx="22" class="box"/>
+    <text class="box-title" x="1556" y="690">中间状态</text>
+    <text class="body" x="1556" y="724">断点、队列、冷却与审核文件</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1930" y="140" width="400" height="720" rx="26" class="panel"/>
+    <text class="group-title" x="1958" y="178">4. 发现与回流闭环</text>
+
+    <rect x="1970" y="235" width="320" height="210" rx="20" class="box"/>
+    <text class="box-title" x="1998" y="275">三通道发现</text>
+    <text class="body" x="1998" y="311">A. 搜狗关键词搜索</text>
+    <text class="body" x="1998" y="345">B. 已采集文章的引用挖掘</text>
+    <text class="body" x="1998" y="379">C. GitHub 安全社区资源同步</text>
+
+    <rect x="1970" y="510" width="320" height="170" rx="20" class="box-dark"/>
+    <text class="box-dark-text" x="1998" y="716">discovery_scheduler.py</text>
+    <text class="note" x="1998" y="610" fill="#ffffff">合并去重、评分、门控</text>
+    <text class="note" x="1998" y="644" fill="#ffffff">高分回写种子库，中间分数进入审核队列</text>
+  </g>
+
+  <g>
+    <path d="M 570 438 C 620 438, 640 325, 695 325" class="flow"/>
+    <path d="M 570 636 C 620 636, 640 622, 695 622" class="flow"/>
+
+    <path d="M 1365 325 C 1430 325, 1450 330, 1525 330" class="flow"/>
+    <path d="M 1365 622 C 1430 622, 1450 362, 1525 362" class="flow"/>
+
+    <path d="M 1815 330 C 1880 330, 1900 340, 1970 340" class="flow-dashed"/>
+    <path d="M 1670 405 C 1850 405, 1850 378, 1970 378" class="flow-dashed"/>
+    <path d="M 1815 330 C 1885 330, 1910 595, 1970 595" class="flow-dashed"/>
+
+    <path d="M 2290 595 C 2350 595, 2350 842, 2150 886 C 1910 938, 780 938, 420 938 C 210 938, 210 734, 210 734" class="flow"/>
+    <path d="M 2290 595 C 2345 595, 2345 120, 320 120 C 210 120, 210 180, 210 215" class="flow-dashed"/>
+  </g>
+
+  <g>
+    <text class="note" x="765" y="200">轻量快速</text>
+    <text class="note" x="1140" y="480">高完整度</text>
+    <text class="note" x="1710" y="222">统一文章出口</text>
+    <text class="note" x="2040" y="482">自动扩种</text>
+    <text class="note" x="510" y="956">回流：新发现账号重新进入种子库与后续采集流程</text>
+  </g>
+</svg>

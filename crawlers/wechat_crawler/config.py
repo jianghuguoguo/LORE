@@ -78,6 +78,9 @@ MITM_CONFIG = {
     # ── 点击文章后等待 mitmproxy 捕获完整响应的秒数 ──
     'CLICK_WAIT_SECONDS': 5,
 
+    # ── 点击后额外等待拦截产物落地的秒数 ──
+    'CAPTURE_WAIT_SECONDS': 4,
+
     # ── 批次间隔（秒），避免过快操作被检测 ──
     # 注意：ui_bot.py 在运行时会使用 random.uniform(3, 7) 替代此固定值
     'BATCH_SLEEP_SECONDS': 2,

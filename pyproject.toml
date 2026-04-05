@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name = "refpentest"
+name = "lore"
 version = "0.1.0"
-description = "Reflective Penetration Testing — a research-grade RAG-augmented pentest agent corpus analysis pipeline"
+description = "LORE — a research-grade RAG-augmented pentest agent corpus analysis pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}

@@ -64,6 +64,10 @@
       <button class="btn-run btn-reflect" id="btnRunPipeline" onclick="runPipeline()">
         <i class="fas fa-brain"></i> 开启反思
       </button>
+      <!-- Theme toggle -->
+      <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()" title="切换深/浅色主题">
+        <i class="fas fa-moon" id="themeIcon"></i>
+      </button>
     </div>
   </header>
 
@@ -318,26 +322,51 @@
       <div class="page" id="page-pipeline">
         <div class="page-header">
           <h2>流水线日志</h2>
-          <span class="page-sub">全链路反思流水线 Layer1 → Layer2 → Layer3（Phase 1-5）</span>
-          <button class="btn-run btn-reflect" style="margin-left:auto" onclick="runPipeline()">
-            <i class="fas fa-brain"></i> 开启完整反思
-          </button>
+          <span class="page-sub">LORE 全链路知识蒸馏 · Layer 0 → Layer 4 + Upload</span>
         </div>
+
+        <!-- 全局状态行 -->
         <div class="pipeline-info-row">
           <div class="info-badge" id="plStatus"><i class="fas fa-circle"></i> Idle</div>
           <div class="info-badge" id="plLastRun"><i class="fas fa-clock"></i> 从未运行</div>
+          <button class="btn-secondary" style="margin-left:auto;font-size:12px" onclick="lorePipelineReset()">
+            <i class="fas fa-trash-can"></i> 清除状态
+          </button>
         </div>
+
+        <!-- 阶段选择 -->
+        <div class="pipeline-stages-grid" id="plStagesGrid">
+          <!-- JS 填充 -->
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="pipeline-controls-row">
+          <div class="pipeline-opts-row">
+            <label>
+              <input type="checkbox" id="plOptNoRagflow">
+              跳过 RAGflow 上传
+            </label>
+            <label>
+              <input type="checkbox" id="plOptVerbose">
+              详细日志
+            </label>
+          </div>
+          <div class="pipeline-sel-actions">
+            <button class="btn-secondary" style="font-size:12px" onclick="lorePipelineSelectAll(true)">全选</button>
+            <button class="btn-secondary" style="font-size:12px" onclick="lorePipelineSelectAll(false)">全不选</button>
+          </div>
+          <button class="btn-run btn-reflect" id="btnLorePipelineRun" onclick="runLorePipeline()">
+            <i class="fas fa-play"></i> 运行选中阶段
+          </button>
+        </div>
+
+        <!-- 实时日志终端 -->
         <div class="terminal-block">
           <div class="terminal-header">
-            <span><i class="fas fa-terminal"></i> stdout</span>
+            <span><i class="fas fa-terminal"></i> 流水线日志</span>
+            <span id="plLiveIndicator" style="margin-left:auto;font-size:11px;color:var(--text-dim)"></span>
           </div>
-          <pre id="plOutput" class="terminal-body">（流水线未运行）</pre>
-        </div>
-        <div class="terminal-block" id="plErrBlock" style="margin-top:12px;display:none">
-          <div class="terminal-header error">
-            <span><i class="fas fa-triangle-exclamation"></i> stderr</span>
-          </div>
-          <pre id="plError" class="terminal-body error"></pre>
+          <pre id="plOutput" class="terminal-body" style="height:360px;overflow-y:auto">（流水线未运行，请选择阶段后点击 "运行选中阶段"）</pre>
         </div>
       </div>
 
@@ -352,7 +381,9 @@
         <div class="wechat-crawler-section">
           <div class="section-label wechat-label">
             <i class="fab fa-weixin" style="color:#07c160"></i> 微信公众号爬虫
-            <span class="section-hint">点击账号卡片可选中用于爬取，点击
+            <span class="section-hint">点击账号卡片可选中用于爬取，双击卡片或点击
+              <i class="fas fa-bolt" style="font-size:11px"></i>
+              可快捷抓取最近 N 天内容，点击
               <i class="fas fa-newspaper" style="font-size:11px"></i>
               可预览已采集文章
             </span>
@@ -378,6 +409,94 @@
                     <input type="number" id="wechatCrawlCount" value="10" min="1" max="100"
                            class="crawl-input narrow">
                     <span style="color:var(--text-dim);font-size:12px;margin-left:4px">篇</span>
+                  </div>
+                  <div class="crawler-form-row">
+                    <label>最近范围</label>
+                    <input type="number" id="wechatCrawlDays" value="7" min="1" max="90"
+                           class="crawl-input narrow" onchange="renderWechatCards()">
+                    <span style="color:var(--text-dim);font-size:12px;margin-left:4px">天</span>
+                  </div>
+                  <div class="crawler-form-row">
+                    <label>采集模式</label>
+                    <select id="wechatMode" class="crawl-input wechat-mode-select" onchange="toggleWechatModePanel()">
+                      <option value="sogou">搜狗直采</option>
+                      <option value="native">原生微信</option>
+                    </select>
+                    <label class="wechat-toggle-line">
+                      <input type="checkbox" id="wechatNativeForce" checked>
+                      原生轨强制执行
+                    </label>
+                    <button class="btn-secondary" onclick="saveWechatRuntimeConfig()">保存配置</button>
+                  </div>
+
+                  <div class="wechat-config-grid">
+                    <div class="wechat-config-card" id="wechatSogouConfigCard">
+                      <div class="wechat-config-title">
+                        <i class="fas fa-globe"></i> 搜狗直采参数
+                      </div>
+                      <div class="wechat-inline-fields two-col">
+                        <label class="wechat-inline-field">
+                          <span>代理模式</span>
+                          <select id="wechatSogouProxyMode" class="crawl-input">
+                            <option value="direct">direct</option>
+                            <option value="auto">auto</option>
+                            <option value="proxy">proxy</option>
+                          </select>
+                        </label>
+                        <label class="wechat-inline-field wide">
+                          <span>代理地址</span>
+                          <input type="text" id="wechatSogouProxyUrl" class="crawl-input" placeholder="http://127.0.0.1:7890">
+                        </label>
+                        <label class="wechat-inline-field">
+                          <span>搜索延时最小值</span>
+                          <input type="number" id="wechatSearchDelayMin" class="crawl-input" min="0.2" step="0.1">
+                        </label>
+                        <label class="wechat-inline-field">
+                          <span>搜索延时最大值</span>
+                          <input type="number" id="wechatSearchDelayMax" class="crawl-input" min="0.2" step="0.1">
+                        </label>
+                        <label class="wechat-inline-field">
+                          <span>验证码退避最小值</span>
+                          <input type="number" id="wechatAntispiderMin" class="crawl-input" min="5" step="1">
+                        </label>
+                        <label class="wechat-inline-field">
+                          <span>验证码退避最大值</span>
+                          <input type="number" id="wechatAntispiderMax" class="crawl-input" min="5" step="1">
+                        </label>
+                      </div>
+                    </div>
+
+                    <div class="wechat-config-card" id="wechatNativeConfigCard">
+                      <div class="wechat-config-title">
+                        <i class="fas fa-desktop"></i> 原生微信联调
+                      </div>
+                      <div class="wechat-native-summary" id="wechatNativeSummary">正在检测现场状态…</div>
+                      <div class="wechat-status-pills">
+                        <span class="wechat-status-pill" id="wechatMitmBadge">mitmdump</span>
+                        <span class="wechat-status-pill" id="wechatProxyBadge">系统代理</span>
+                        <span class="wechat-status-pill" id="wechatClientBadge">PC 微信</span>
+                      </div>
+                      <div class="wechat-inline-fields two-col" style="margin-top:10px">
+                        <label class="wechat-inline-field">
+                          <span>代理主机</span>
+                          <input type="text" id="wechatNativeProxyHost" class="crawl-input" placeholder="127.0.0.1">
+                        </label>
+                        <label class="wechat-inline-field">
+                          <span>代理端口</span>
+                          <input type="number" id="wechatNativeProxyPort" class="crawl-input" min="1" step="1">
+                        </label>
+                      </div>
+                      <div class="crawler-form-actions wechat-native-actions">
+                        <button class="btn-secondary" onclick="wechatNativeStartMitm()">启动 mitmdump</button>
+                        <button class="btn-secondary" onclick="wechatNativeStopMitm()">停止 mitmdump</button>
+                        <button class="btn-secondary" onclick="wechatNativeEnableProxy()">启用系统代理</button>
+                        <button class="btn-secondary" onclick="wechatNativeRestoreProxy()">恢复系统代理</button>
+                        <button class="btn-secondary" onclick="loadWechatNativeStatus()">刷新状态</button>
+                      </div>
+                      <div class="wechat-native-checklist" id="wechatNativeChecklist">
+                        <div class="wechat-native-step"><i class="fas fa-spinner fa-spin"></i> 等待状态返回…</div>
+                      </div>
+                    </div>
                   </div>
                   <div class="crawler-form-actions">
                     <button class="btn-run wechat-run-btn" id="btnWechatCrawl" onclick="wechatCrawlRun()">
@@ -658,7 +777,6 @@
             <button class="cons-filter-btn" data-filter="layer" data-val="FACTUAL">FACTUAL</button>
             <button class="cons-filter-btn" data-filter="layer" data-val="METACOGNITIVE">META</button>
             <button class="cons-filter-btn" data-filter="layer" data-val="CONCEPTUAL">CONCEPTUAL</button>
-            <button class="cons-filter-btn" data-filter="layer" data-val="RAG_EVALUATION">RAG_EVAL</button>
           </div>
           <div class="cons-filter-group">
             <span class="cons-filter-label">成熟度</span>

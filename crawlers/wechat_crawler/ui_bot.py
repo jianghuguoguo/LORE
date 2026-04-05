@@ -43,7 +43,10 @@ log = logging.getLogger('wechat_ui_bot')
 TARGET_ACCOUNTS   = MITM_CONFIG.get('TARGET_ACCOUNTS', [])
 ARTICLES_PER_ACCT = MITM_CONFIG.get('ARTICLES_PER_ACCOUNT', 30)
 _CLICK_WAIT_BASE  = MITM_CONFIG.get('CLICK_WAIT_SECONDS', 5)
+_CAPTURE_WAIT     = float(MITM_CONFIG.get('CAPTURE_WAIT_SECONDS', 4))
 _BATCH_SLEEP_BASE = MITM_CONFIG.get('BATCH_SLEEP_SECONDS', 2)
+_QUEUE_FILE       = Path(MITM_CONFIG.get('QUEUE_FILE', _HERE / 'captured_queue.jsonl'))
+_SAVE_DIR         = Path(MITM_CONFIG.get('SAVE_DIR', _HERE.parent.parent.parent / 'raw_data' / 'wechat'))
 
 
 def _rand_click_wait() -> float:
@@ -53,6 +56,24 @@ def _rand_click_wait() -> float:
 def _rand_batch_sleep() -> float:
     """滚动间隔：base±1 秒随机。"""
     return random.uniform(max(1.5, _BATCH_SLEEP_BASE - 1), _BATCH_SLEEP_BASE + 2)
+
+
+def _capture_marker() -> tuple[int, int, int]:
+    save_count = len(list(_SAVE_DIR.glob('*.json'))) if _SAVE_DIR.exists() else 0
+    if _QUEUE_FILE.exists():
+        stat = _QUEUE_FILE.stat()
+        return save_count, int(stat.st_size), int(stat.st_mtime)
+    return save_count, 0, 0
+
+
+def _wait_for_capture(previous_marker: tuple[int, int, int], timeout: float = _CAPTURE_WAIT) -> bool:
+    deadline = time.time() + max(0.5, timeout)
+    while time.time() < deadline:
+        current = _capture_marker()
+        if current != previous_marker:
+            return True
+        time.sleep(0.4)
+    return _capture_marker() != previous_marker
 
 
 class WeChatUIBot:
@@ -217,6 +238,7 @@ class WeChatUIBot:
 
                 x = int(l + w * card_rx)
                 y = int(t + h * ry)
+                before_capture = _capture_marker()
 
                 # 点击文章卡片
                 pyautogui.moveTo(x, y, duration=0.15)
@@ -230,6 +252,10 @@ class WeChatUIBot:
                 time.sleep(0.4)
                 pyautogui.hotkey('alt', 'left')
                 time.sleep(0.4)
+
+                if not _wait_for_capture(before_capture):
+                    log.warning(f'点击位置 ({x}, {y}) 后未观察到新的拦截产物，跳过计数')
+                    continue
 
                 clicked += 1
                 batch_clicked += 1
