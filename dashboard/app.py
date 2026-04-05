@@ -49,7 +49,7 @@ PIPELINE_PY = ROOT_DIR / "run" / "run_layer2_analysis.py"
 
 
 def _resolve_script_path(*candidates: Path) -> Path:
-    """返回首个存在的脚本路径，兼容目录迁移后的新旧位置。"""
+    """返回首个存在的路径，兼容目录迁移后的新旧位置。"""
     for candidate in candidates:
         try:
             if candidate.exists():
@@ -67,7 +67,10 @@ SYNC_PY     = _resolve_script_path(
     ROOT_DIR / "crawlers" / "sync_data_light.py",
     ROOT_DIR / "scripts" / "sync_data_light.py",
 )
-RAW_DATA_DIR = ROOT_DIR / "raw_data"
+RAW_DATA_DIR = _resolve_script_path(
+    WORKSPACE / "raw_data",
+    ROOT_DIR / "raw_data",
+)
 
 
 def _resolve_python_exe() -> Path:
