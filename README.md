@@ -1,4 +1,8 @@
-﻿# LORE · 渗透测试知识蒸馏系统
+﻿# README: 语言切换
+
+[English](README_en.md) | [中文](README.md)
+
+# LORE · 渗透测试知识蒸馏系统
 
 <div align="center">
 

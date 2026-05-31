@@ -26,8 +26,12 @@ llm:
   base_url: "https://api.deepseek.com"
 
   # 密钥解析优先级：环境变量 > api_key_literal
+  # 密钥格式说明：
+  # - 优先使用环境变量，设置为环境变量名（例如: LLM_API_KEY）。
+  # - 若使用 `api_key_literal`，填写实际密钥（仅用于本地测试，切勿提交仓库）。
+  # - 常见示例：OpenAI 风格为 `sk-...`，其它供应商为任意 token 字符串。
   api_key_env: "LLM_API_KEY"
-  api_key_literal: "sk-de4283774a11454b895f0bab4adba9d9"
+  api_key_literal: "xxx"
 
   # 推理参数
   temperature: 0.0
@@ -45,23 +49,30 @@ ragflow:
   base_url_env: "RAGFLOW_BASE_URL"
 
   # 密钥解析优先级：环境变量 > api_key_literal
+  # 密钥格式说明：
+  # - 优先使用环境变量，设置为环境变量名（例如: RAGFLOW_API_KEY）。
+  # - 若使用 `api_key_literal`，填写实际密钥（仅用于临时测试，切勿提交仓库）。
+  # - 示例：`ragflow-<token>` 或控制台生成的任意 token 字符串。
   api_key_env: "RAGFLOW_API_KEY"
-  api_key_literal: "ragflow-iB2U1ufs27hLl0FyLPLup-EU6lsjR8afFjA060_SPEs"
+  api_key_literal: "xxx"
 
   # 网络参数
   request_timeout: 60
   retry_times: 2
 
   # 知识库 ID 路由（请按你的 RAGflow 实例填写）
+  # 数据集 ID 格式说明：
+  # - 通常为控制台显示的 dataset ID 或 UUID/32 字符十六进制字符串。
+  # - 示例：b5f3a66f065f11f1bca40242ac120006（仅示例，替换为你的实例 ID）。
   datasets:
     # Layer4 / 回流主库
-    experience: "b5f3a66f065f11f1bca40242ac120006"
+    experience: "xxx"
     # Layer3 分层上传路由
-    factual: "30bbf5f11ab811f1aa4e0242ac120006"
-    procedural_pos: "0615b25a1ab911f1aa160242ac120006"
-    procedural_neg: "fb3f9e7c1ab811f1a1c30242ac120006"
-    metacognitive: "0ff97af51ab911f19e1c0242ac120006"
+    factual: "xxx"
+    procedural_pos: "xxx"
+    procedural_neg: "xxx"
+    metacognitive: "xxx"
     # 全量归档预留（默认路由不使用）
-    full: "b877bec1065c11f1a8960242ac120006"
+    full: "xxx"
     # 回流次级库（可为空）
-    secondary: ""
+    secondary: "xxx"
