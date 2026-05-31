@@ -597,6 +597,10 @@ def _extract_neg_from_event(
     if frc is None:
         return None
 
+    # 排除 ENV 类失败：执行环境缺陷（工具缺失/超时/权限等）不具备跨会话的策略迁移价值
+    if frc.dimension == FailureRootCauseDimension.ENV:
+        return None
+
     command = _get_command_text(event)
     raw_output = _get_raw_output(event)
     tool_name = event.base.call.tool_name
@@ -650,16 +654,10 @@ def _extract_neg_from_event(
             "interpretation": _soft_truncate(avoid_pattern, 300),
             "certainty": "medium",
         },
-        "decision_rule": _build_rule_fallback_decision_rule(
-            command=command,
-            tool_name=tool_name,
-            attack_phase=attack_phase,
-            dim=dim,
-            sub_dim=sub_dim,
-            evidence=evidence,
-            remediation=remediation,
-        ),
-        "decision_rule_source": "rule_fallback",
+        # 决策规则延迟到 _enrich_neg_with_decision_rules 中按需生成：
+        # LLM 成功时用 LLM 版本，LLM 失败/跳过时用规则兜底
+        "decision_rule": {},
+        "decision_rule_source": "pending",
         "target_service": target_service or "",
         "cve_ids": cve_ids,
     }
@@ -825,6 +823,20 @@ def _enrich_neg_with_decision_rules(
                         decision_rule_entry["next_actions"] = next_actions
                 exp.content["decision_rule"] = decision_rule_entry
                 exp.content["decision_rule_source"] = "llm"
+
+    # ── 兜底：对未被 LLM 成功丰富的条目（仍为 "pending"）调用规则兜底 ─────
+    for exp in neg_results:
+        if exp.content.get("decision_rule_source") == "pending":
+            exp.content["decision_rule"] = _build_rule_fallback_decision_rule(
+                command=exp.content.get("failed_command", ""),
+                tool_name=exp.content.get("tool_name", ""),
+                attack_phase=exp.content.get("attack_phase", ""),
+                dim=exp.content.get("failure_dimension", ""),
+                sub_dim=exp.content.get("failure_sub_dimension", ""),
+                evidence=exp.content.get("evidence", ""),
+                remediation=exp.content.get("remediation_hint") or "",
+            )
+            exp.content["decision_rule_source"] = "rule_fallback"
 
 
 def extract_procedural_experiences(

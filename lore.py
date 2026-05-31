@@ -103,7 +103,6 @@ STAGES = [
     ("layer2",    "Layer 2  经验蒸馏",            "data/layer2_output"),
     ("layer3_p12","Layer 3  Phase 1+2  SEC/EWC",   "data/layer3_output/phase12_result.jsonl"),
     ("layer3_p34","Layer 3  Phase 3+4  RME/BCC",   "data/layer3_output/phase34_consolidated.jsonl"),
-    ("layer3_p5", "Layer 3  Phase 5    KLM",        "data/layer3_output/phase5_klm_registry.jsonl"),
     ("layer4",    "Layer 4  缺口感知 + 冲突检测",  "data/layer4_output/gap_dispatch_summary.json"),
     ("upload",    "Upload   上传 Layer3 融合经验到 RAGflow", "data/layer3_output/phase34_consolidated.jsonl"),
 ]

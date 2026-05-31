@@ -52,16 +52,65 @@ class CaiAdapter(LogAdapter):
 
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
-        """嗅探前 _SNIFF_LINES 行，查找 event=session_start 标志。"""
+        """嗅探前 _SNIFF_LINES 行，查找 event=session_start 标志。
+
+        支持单行 JSONL 和多行 pretty-print JSON 两种格式。
+        多行格式：累积行直到大括号闭合，再解析为完整 JSON 对象。
+        """
         try:
             with open(file_path, encoding="utf-8") as fh:
+                buf = ""
+                brace_depth = 0
+                in_record = False  # 是否已看到开头的 {
                 for _ in range(_SNIFF_LINES):
                     raw = fh.readline()
                     if not raw:
                         break
-                    obj = json.loads(raw.strip())
-                    if obj.get("event") == "session_start":
-                        return True
+                    line = raw.strip()
+                    if not line:
+                        # 空行：如果缓冲区有内容，尝试解析
+                        if buf:
+                            try:
+                                obj = json.loads(buf)
+                                if obj.get("event") == "session_start":
+                                    return True
+                            except Exception:
+                                pass
+                            buf = ""
+                            brace_depth = 0
+                            in_record = False
+                        continue
+
+                    # 检查此行是否包含 { 或 }
+                    for ch in line:
+                        if ch == "{":
+                            if brace_depth == 0:
+                                in_record = True
+                            brace_depth += 1
+                        elif ch == "}":
+                            brace_depth -= 1
+
+                    if in_record:
+                        # 累积多行记录
+                        buf += line
+                        if brace_depth == 0:
+                            # 大括号闭合 → 尝试解析
+                            try:
+                                obj = json.loads(buf)
+                                if obj.get("event") == "session_start":
+                                    return True
+                            except Exception:
+                                pass
+                            buf = ""
+                            in_record = False
+                    else:
+                        # 单行 JSONL 尝试
+                        try:
+                            obj = json.loads(line)
+                            if obj.get("event") == "session_start":
+                                return True
+                        except Exception:
+                            pass
         except Exception:  # noqa: BLE001
             pass
         return False

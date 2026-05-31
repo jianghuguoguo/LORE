@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 from src.layer1.pipeline import load_annotated_turn_sequence
 from src.layer2.pipeline import run_layer2
 from src.layer2.serializer import experience_to_dict
-from src.layer3 import cluster_experiences, run_bcc, run_klm, run_rme, weight_equivalence_sets
+from src.layer3 import cluster_experiences, run_bcc, run_rme, weight_equivalence_sets
 
 
 DEFAULT_PRIORITY_SESSION_PREFIXES = [
@@ -133,9 +133,6 @@ def run_smoke(layer1_files: List[Path]) -> Dict[str, Any]:
     merge_results = run_rme(wes_list)
     wes_map = {wes.cluster.cluster_id: wes for wes in wes_list}
     _, consolidated_exps = run_bcc(merge_results, wes_map)
-
-    exp_map = {e.get("exp_id", ""): e for e in all_exps if e.get("exp_id")}
-    _, _, reflux_ready = run_klm(consolidated_exps, exp_map)
 
     pneg_merges = [m for m in merge_results if m.knowledge_layer == "PROCEDURAL_NEG"]
     factual_merges = [m for m in merge_results if m.knowledge_layer == "FACTUAL"]

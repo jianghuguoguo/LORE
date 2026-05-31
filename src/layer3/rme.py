@@ -33,8 +33,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from .models import (
     MergeResult,
     Provenance,
-    WeightedEquivalenceSet,
-    WeightedExperience,
+    EquivalenceSet,
     _fusion_threshold_for_layer,
 )
 from .sec import canonical_service_or_empty, resolve_target_service
@@ -51,12 +50,7 @@ _MINORITY_MAX  = 3      # 保留的少数意见最大数量
 # 辅助工具函数
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _total_weight(wes: WeightedEquivalenceSet) -> float:
-    return wes.total_weight or 1e-9
 
-
-def _exp_weight(we: WeightedExperience) -> float:
-    return we.weight_effective if we.weight_effective > 0 else 0.01
 
 
 def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
@@ -153,70 +147,49 @@ def _make_exp_id_hash(cluster_id: str) -> str:
     return f"exp_consolidated_{h}"
 
 
-def _contradiction_score(wes: WeightedEquivalenceSet) -> float:
-    """计算等价集内的矛盾评分（§10.2 / 2026-03-19 根因 3 修复）。
+def _contradiction_score(wes: Any) -> float:
+    """计算等价集内的矛盾评分 ∈ [0, 1]。
 
-    策略：仅在同层（POS vs POS 之间，NEG vs NEG 之间）且同 layer 计算矛盾，
-    避免 POS 和 NEG 因角色不同被误判为互相否定。
+    策略：
+      - PROCEDURAL_NEG：度量同一 cluster 内不同经验给出的 THEN 建议分歧度
+      - FACTUAL：度量同一 CVE 的 exploitation_results 中 success vs failure 矛盾比
+      - 其他层：度量 session_outcome 的 success/failure 混合程度
 
-    success_flag(E) = 1 if session_outcome == 'success' else 0
+    返回值越大表示矛盾越严重。
     """
-    # 提取所有经验及其所属层 (POS/NEG)
-    meta_exps: List[Tuple[str, str, WeightedExperience]] = []
-    for we in wes.weighted_exps:
-        layer = str(we.exp.get("knowledge_layer", "")).upper()
-        # POS/NEG 判定：PROCEDURAL_NEG 显式为 NEG，其他的（如 FACTUAL_RULE）根据 session_outcome 判定
-        outcome = we.exp.get("metadata", {}).get("session_outcome", "")
-        # PROCEDURAL_NEG 永远是负面样本
-        role = "NEG" if layer == "PROCEDURAL_NEG" or outcome == "failure" else "POS"
-        meta_exps.append((layer, role, we))
-
-    # 按 (layer, role) 分组计算各自的矛盾分，取最大值
-    group_scores: List[float] = []
-    groups: Dict[Tuple[str, str], List[WeightedExperience]] = defaultdict(list)
-    for layer, role, we in meta_exps:
-        groups[(layer, role)].append(we)
-
-    if not groups:
-        return 0.0
-
-    # 对每一组，计算内部多样性（如有无其他导致分歧的因子，本版本简化为 0，
-    # 真正的矛盾核心是 success/failure，但根据修复逻辑，同一组内的 role 是相同的）。
-    # 修正逻辑：如果一个 cluster 同时包含 POS 和 NEG 角色，
-    # 应该允许它们共存。矛盾评分现在衡量的是：
-    # 同一个（Layer, Role）分组下，置信度或子维度是否有剧烈冲突。
-    # 既然 Role 已被隔离，这里的 outcome_diff 默认应为 1.0（无矛盾）。
-    return 0.0  # 暂时归零，未来如需在 POS 内部区分"不同的 POS 路径"冲突在此扩展
+    # After refactor to session-vote model, contradiction scoring is moved out of
+    # RME. Return 0.0 here to keep backward compatibility.
+    return 0.0
 
 
-def _build_provenance(wes: WeightedEquivalenceSet) -> Provenance:
-    """从 WeightedEquivalenceSet 构建 Provenance 对象。"""
-    total_w = _total_weight(wes)
-    source_exp_ids = _dedupe_preserve_order(we.exp_id for we in wes.weighted_exps)
+def _build_provenance(cluster: EquivalenceSet) -> Provenance:
+    """从 EquivalenceSet 构建简化的 Provenance 对象（不包含权重分布）。"""
+    source_exp_ids = _dedupe_preserve_order(cluster.exp_ids or [])
     source_sessions = _dedupe_preserve_order(
-        we.exp.get("metadata", {}).get("source_session_id", "")[:8]
-        for we in wes.weighted_exps
+        (e.get("metadata", {}).get("source_session_id", "")[:8] or "")
+        for e in (cluster.experiences or [])
     )
-    weight_dist: Dict[str, float] = {}
-    for we in wes.weighted_exps:
-        if we.exp_id in weight_dist:
-            continue
-        weight_dist[we.exp_id] = round(_exp_weight(we) / total_w, 4)
     return Provenance(
         source_exp_ids=source_exp_ids,
         source_sessions=source_sessions,
-        weight_distribution=weight_dist,
-        fusion_algorithm="XPEC-RME-v1.2",
+        weight_distribution={},
+        fusion_algorithm="XPEC-RME-v2.session_vote",
     )
 
 
-def _resolve_wes_target_service(wes: WeightedEquivalenceSet) -> str:
-    """从等价集样本中按有效权重回填服务名。"""
-    vote: Dict[str, float] = defaultdict(float)
-    for we in wes.weighted_exps:
-        svc = resolve_target_service(we.exp)
+def _resolve_wes_target_service(wes: Any) -> str:
+    # Accept either WeightedEquivalenceSet or EquivalenceSet for backward compat.
+    exps = []
+    if hasattr(wes, "weighted_exps"):
+        exps = [we.exp for we in wes.weighted_exps]
+    elif hasattr(wes, "experiences"):
+        exps = list(wes.experiences or [])
+
+    vote: Dict[str, int] = defaultdict(int)
+    for e in exps:
+        svc = resolve_target_service(e)
         if svc:
-            vote[svc] += _exp_weight(we)
+            vote[svc] += 1
     if not vote:
         return ""
     return max(vote.items(), key=lambda kv: kv[1])[0]
@@ -290,53 +263,66 @@ def _action_intent_dedup(then_items: List[str]) -> List[str]:
     return final
 
 
-def _merge_procedural_neg(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict], List[str]]:
-    """IF加权交集 + THEN多数投票 + NOT并集 + next_actions步骤对齐。
+def _merge_procedural_neg(wes: Any) -> Tuple[Dict, List[Dict], List[str]]:
+    """基于会话投票的 PROCEDURAL_NEG 融合实现。
 
+    主要变更：抛弃经验权重，改为按独立 session 计票（每个 session 最多一票）。
     Returns: (fused_content, minority_opinions, merge_notes)
     """
     notes: List[str] = []
-    total_w = _total_weight(wes)
 
-    # ── Step 1：IF 条件加权交集 ────────────────────────────────────────────
-    # 找到被最多高权重经验共同包含的触发条件片段
-    if_texts: List[str] = []
-    if_weights: List[float] = []
-    for we in wes.weighted_exps:
-        dr = we.exp.get("content", {}).get("decision_rule", {})
-        if_text = dr.get("IF", "").strip()
+    # 支持 WeightedEquivalenceSet 或 EquivalenceSet 两种输入，向后兼容
+    if hasattr(wes, "weighted_exps"):
+        cluster = wes.cluster
+        exps = [we.exp for we in wes.weighted_exps]
+    else:
+        cluster = wes
+        exps = list(cluster.experiences or [])
+
+    # 会话集合（独立会话数）
+    def _session_id(exp: Dict[str, Any]) -> str:
+        return (exp.get("metadata", {}).get("source_session_id", "") or "")[:8]
+
+    sessions = _dedupe_preserve_order(_session_id(e) for e in exps if _session_id(e))
+    n_sessions = max(1, len(sessions))
+
+    # Step 1: IF — 选择被最多独立 session 支持的 IF 文本
+    if_map: Dict[str, set] = defaultdict(set)
+    for e in exps:
+        dr = e.get("content", {}).get("decision_rule", {})
+        if_text = (dr.get("IF", "") or "").strip()
         if if_text:
-            if_texts.append(if_text)
-            if_weights.append(_exp_weight(we))
-
-    # 取权重最高的 IF 作为代表（最高权重经验的 IF 通常最精确）
+            if_map[if_text].add(_session_id(e))
     merged_if = ""
-    if if_texts:
-        best_idx = if_weights.index(max(if_weights))
-        merged_if = if_texts[best_idx]
-        notes.append(f"IF: 来自主导经验 {wes.dominant_exp_id}，共 {len(if_texts)} 条备选")
+    if if_map:
+        merged_if = max(if_map.items(), key=lambda kv: len(kv[1]))[0]
+        notes.append(f"IF: 由 {len(if_map)} 个候选 IF，选取支持最多的版本")
 
-    # ── Step 2：THEN 加权多数投票（θ=0.4）────────────────────────────────
-    then_all: List[str] = []
-    then_w_all: List[float] = []
-    for we in wes.weighted_exps:
-        dr = we.exp.get("content", {}).get("decision_rule", {})
+    # Step 2: THEN — 按 session 支持度做 union_top_n（min_ratio=3%）
+    then_support: Dict[str, set] = defaultdict(set)
+    for e in exps:
+        dr = e.get("content", {}).get("decision_rule", {})
         then_list = dr.get("THEN", [])
         if isinstance(then_list, str):
             then_list = [then_list]
+        sid = _session_id(e)
         for t in then_list:
-            then_all.append(t)
-            then_w_all.append(_exp_weight(we))
+            if t:
+                then_support[str(t)].add(sid)
 
-    # Issue 1 修复：改用 _weighted_union_top_n（每项只需 ≥3% 支持权重即可保留），
-    # 彻底解决多策略场景下 θ=0.40 导致 95% THEN 条目全被丢弃的问题。
-    merged_then, then_minorities = _weighted_union_top_n(
-        then_all, then_w_all, total_w, min_weight_ratio=0.03, top_n=8
-    )
-    notes.append(
-        f"THEN: weighted_union 保留 {len(merged_then)} 条(≥3%权重)，"
-        f"{len(then_minorities)} 条进入 alternatives"
-    )
+    # 按支持会话数排序，保留支持率 >= min_ratio 且排名前 top_n
+    min_ratio = 0.03
+    top_n = 8
+    sorted_then = sorted(then_support.items(), key=lambda kv: -len(kv[1]))
+    merged_then: List[str] = []
+    then_minorities: List[Tuple[str, float]] = []
+    for i, (t, sids) in enumerate(sorted_then):
+        ratio = len(sids) / n_sessions
+        if ratio >= min_ratio and i < top_n:
+            merged_then.append(t)
+        else:
+            then_minorities.append((t, round(ratio, 4)))
+    notes.append(f"THEN: union_top_n 保留 {len(merged_then)} 条，{len(then_minorities)} 条进入 alternatives")
 
     # ── Step 2b：CVE 级去重（同一 CVE 多条 THEN 只保留权重最高那条）────────────
     # _weighted_union_top_n 已按支持权重降序排列，首次遇到某 CVE 的条目即为最高权重版本，
@@ -344,6 +330,7 @@ def _merge_procedural_neg(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict]
     # 多 CVE 组合条目（如"CVE-2019-2725 或 CVE-2020-14882"）同时标记对应的所有 CVE 为已覆盖。
     _CVE_RE = re.compile(r'CVE-\d{4}-\d+', re.IGNORECASE)
     seen_cves: set = set()
+    # CVE 级去重（按出现顺序保留首次覆盖该 CVE 的条目）
     deduped_then: List[str] = []
     for t in merged_then:
         cves_in_t = {c.upper() for c in _CVE_RE.findall(t)}
@@ -352,108 +339,98 @@ def _merge_procedural_neg(wes: WeightedEquivalenceSet) -> Tuple[Dict, List[Dict]
             if new_cves:
                 deduped_then.append(t)
                 seen_cves.update(cves_in_t)
-            # 该条 THEN 的所有 CVE 均已被更高权重条目覆盖，跳过
         else:
-            deduped_then.append(t)  # 非 CVE 条目（如 hydra 爆破）无条件保留
+            deduped_then.append(t)
     removed_count = len(merged_then) - len(deduped_then)
     if removed_count > 0:
-        notes.append(
-            f"THEN: CVE 级去重移除 {removed_count} 条重复 CVE 措辞条目，最终 {len(deduped_then)} 条"
-        )
+        notes.append(f"THEN: CVE 级去重移除 {removed_count} 条重复 CVE 条目，最终 {len(deduped_then)} 条")
     merged_then = deduped_then
 
-    # ── Step 2c：动作意图级去重（P1 Fix 5）──────────────────────────────
-    # CVE 级去重之后，同一集群可能还存在意图相同但措辞不同的 THEN 条目
-    # 例：「nmap 确认端口 7001/7002」与「nmap -sV -p 7000-7010,8000-8010 详细扫描」
+    # 动作意图级去重
     before_intent = len(merged_then)
     merged_then = _action_intent_dedup(merged_then)
     intent_removed = before_intent - len(merged_then)
     if intent_removed > 0:
-        notes.append(
-            f"THEN: 动作意图级去重移除 {intent_removed} 条近义条目，最终 {len(merged_then)} 条"
-        )
+        notes.append(f"THEN: 动作意图级去重移除 {intent_removed} 条近义条目，最终 {len(merged_then)} 条")
 
-    # ── Step 3：NOT 加权多数投票（问题④修复：θ降至 0.20，避免过可投票导致所有项被清除）──────
-    # 语义原则：至少有 20% 权重支持的禁止操作就应展示给 Agent，
-    # 因为 PROCEDURAL_NEG 的 NOT 字段就是导导戒误的名单——安全性要求高于燃绿陆。
-    not_items: List[str] = []
-    not_weights: List[float] = []
-    for we in wes.weighted_exps:
-        dr  = we.exp.get("content", {}).get("decision_rule", {})
+    # NOT: 按 session 支持度投票（theta=0.20）
+    not_support: Dict[str, set] = defaultdict(set)
+    for e in exps:
+        dr = e.get("content", {}).get("decision_rule", {})
         not_val = dr.get("NOT", "")
-        w   = _exp_weight(we)
+        sid = _session_id(e)
         if isinstance(not_val, list):
             for n in not_val:
                 if n:
-                    not_items.append(n)
-                    not_weights.append(w)
+                    not_support[str(n)].add(sid)
         elif not_val:
-            not_items.append(not_val)
-            not_weights.append(w)
-    not_set, not_minorities = _weighted_vote(not_items, not_weights, 0.20, total_w)
-    # Fallback：若捕衡投票后为空（所有项权重 < 20%），至少保留权重最高的一条
-    if not not_set and not_items:
-        best_idx = not_weights.index(max(not_weights))
-        not_set = [not_items[best_idx]]
-        not_minorities.insert(0, (not_items[best_idx], round(not_weights[best_idx] / total_w, 4)))
-    notes.append(
-        f"NOT: 加权投票(θ=0.20)保留 {len(not_set)} 条共识项，"
-        f"丢弃 {len(not_minorities)} 条低频/冗余项"
-    )
+            not_support[str(not_val)].add(sid)
 
-    # ── Step 4：next_actions 步骤对齐（取主导经验版本，附备选）─────────
-    best_we = max(wes.weighted_exps, key=_exp_weight)
+    not_set: List[str] = []
+    not_minorities: List[Tuple[str, float]] = []
+    theta = 0.20
+    for t, sids in sorted(not_support.items(), key=lambda kv: -len(kv[1])):
+        ratio = len(sids) / n_sessions
+        if ratio >= theta:
+            not_set.append(t)
+        else:
+            not_minorities.append((t, round(ratio, 4)))
+    # Fallback：若为空则保留支持最多的一条
+    if not not_set and not_support:
+        best = max(not_support.items(), key=lambda kv: len(kv[1]))
+        not_set = [best[0]]
+        not_minorities.insert(0, (best[0], round(len(best[1]) / n_sessions, 4)))
+    notes.append(f"NOT: 会话投票(θ=0.20)保留 {len(not_set)} 条共识项，丢弃 {len(not_minorities)} 条")
+
+    # next_actions: 选取最高置信度经验作为主导版本，记录差异备选
+    def _conf(e: Dict[str, Any]) -> float:
+        try:
+            return float(e.get("confidence", 0.0) or 0.0)
+        except Exception:
+            return 0.0
+
+    best_exp = max(exps, key=_conf)
     merged_next_actions = (
-        best_we.exp.get("content", {})
-        .get("decision_rule", {})
-        .get("next_actions", [])
+        best_exp.get("content", {}).get("decision_rule", {}).get("next_actions", [])
     )
-    # 收集其他经验的备选步骤（仅记录与主导不同的）
     alt_next: List[Dict] = []
-    for we in wes.weighted_exps:
-        if we.exp_id == best_we.exp_id:
+    for e in exps:
+        if e.get("exp_id") == best_exp.get("exp_id"):
             continue
-        na = we.exp.get("content", {}).get("decision_rule", {}).get("next_actions", [])
+        na = e.get("content", {}).get("decision_rule", {}).get("next_actions", [])
         if na and na != merged_next_actions:
             alt_next.append({
-                "source_exp_id": we.exp_id,
-                "weight": round(_exp_weight(we), 4),
+                "source_exp_id": e.get("exp_id"),
+                "support_sessions": len({ _session_id(e) }),
                 "next_actions": na,
             })
-    notes.append(f"next_actions: 主导版本 from {best_we.exp_id}，{len(alt_next)} 个备选")
+    notes.append(f"next_actions: 主导版本 from {best_exp.get('exp_id')}，{len(alt_next)} 个备选")
 
-    # ── 取主导经验的 sub_dim、failure_dimension 等元信息 ────────────────
-    dom_content = best_we.exp.get("content", {})
+    dom_content = best_exp.get("content", {})
     source_counter = Counter(
-        str((we.exp.get("content", {}) or {}).get("decision_rule_source", "unknown"))
-        for we in wes.weighted_exps
+        str((e.get("content", {}) or {}).get("decision_rule_source", "unknown"))
+        for e in exps
     )
 
     fused_content = {
         "failure_sub_dimension": dom_content.get("failure_sub_dimension", ""),
         "failure_dimension": dom_content.get("failure_dimension", ""),
-        "decision_rule_source_breakdown": {
-            k: int(v) for k, v in source_counter.items() if k
-        },
+        "decision_rule_source_breakdown": {k: int(v) for k, v in source_counter.items() if k},
         "decision_rule": {
-            "IF":          merged_if,
-            "THEN":        merged_then,
-            "NOT":         not_set,
+            "IF": merged_if,
+            "THEN": merged_then,
+            "NOT": not_set,
             "next_actions": merged_next_actions,
-            "alternatives": alt_next[:3],   # 最多保留3个备选
+            "alternatives": alt_next[:3],
         },
         "failure_pattern_detail": dom_content.get("failure_pattern_detail", {}),
         "avoid_pattern": dom_content.get("avoid_pattern", ""),
-        "fused_from_count": len(wes.weighted_exps),
+        "fused_from_count": len(exps),
     }
 
     minority_opinions = [
-        {
-            "type":   "THEN_minority",
-            "value":  item,
-            "weight": w,
-        }
-        for item, w in then_minorities[:_MINORITY_MAX]
+        {"type": "THEN_minority", "value": item, "support_ratio": r}
+        for item, r in then_minorities[:_MINORITY_MAX]
     ]
 
     return fused_content, minority_opinions, notes

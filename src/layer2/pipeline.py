@@ -5,16 +5,21 @@ Layer 2 主流水线（Experience Extraction Pipeline）
 生成并可选保存 ExperienceBundle。
 
 流水线执行顺序：
-  Step 1 : FACTUAL  提取    （规则驱动，无 LLM）
-  Step 2 : PROCEDURAL 提取  （规则驱动，无 LLM）
-  Step 3 : METACOGNITIVE 提取（LLM 驱动，可选）
-  Step 4 : CONCEPTUAL 提取   （LLM 驱动，可选）
+  Step 1 : FACTUAL  提取         （规则驱动）
+  Step 1.5: FACTUAL (LLM) 提取   （LLM 驱动，默认启用）
+  Step 2 : PROCEDURAL 提取       （规则驱动 + NEG decision_rule LLM 丰富，默认启用）
+  Step 3 : METACOGNITIVE 提取    （LLM 驱动，默认启用）
+  Step 4 : CONCEPTUAL 提取       （LLM 驱动，默认启用）
   Step 5 : 会话内去重 + 统计
   Step 6 : 保存到磁盘（可选）
 
 公开 API：
-  run_layer2(ann_seq, client=None) -> ExperienceBundle
-  run_layer2_batch(input_dir, output_dir, client) -> Iterator[ExperienceBundle]
+  run_layer2(ann_seq) -> ExperienceBundle           # 默认启用 LLM 增强
+  run_layer2(ann_seq, client=None) -> ...            # 跳过所有 LLM 步骤
+  run_layer2_batch(input_dir) -> Iterator[...]       # 批量，默认启用 LLM
+
+注意：未传入 client 时自动从 configs/config.yaml 构建 LLMClient；
+      显式传入 client=None 可完全跳过 LLM 增强步骤（测试/调试场景）。
 """
 
 from __future__ import annotations
@@ -35,10 +40,23 @@ from .serializer import save_experience_bundle
 
 logger = get_logger(__name__)
 
+# 哨兵值：区分"未传入 client"（默认启用 LLM）与"显式传 None"（跳过 LLM）
+_UNSET_CLIENT = object()
+
+
+def _auto_build_llm_client():
+    """尝试从配置文件自动构建 LLMClient；失败时返回 None 并记录 warning。"""
+    try:
+        from ..llm_client import build_llm_client_from_config  # noqa: F811
+        return build_llm_client_from_config()
+    except Exception as e:
+        logger.warning("[layer2] 无法自动构建 LLMClient，LLM 增强步骤将跳过: %s", e)
+        return None
+
 
 def run_layer2(
     ann_seq: AnnotatedTurnSequence,
-    client=None,
+    client=_UNSET_CLIENT,
     save: bool = False,
     output_dir: Optional[Path] = None,
 ) -> ExperienceBundle:
@@ -46,13 +64,18 @@ def run_layer2(
 
     Args:
         ann_seq    : Layer 1 完整标注输出
-        client     : LLMClient 实例（None 时跳过 LLM 任务）
+        client     : LLMClient 实例；默认自动从配置文件构建。
+                     显式传入 None 可跳过所有 LLM 增强步骤（供测试/调试使用）
         save       : 是否将结果保存至磁盘
         output_dir : 保存目录（save=True 时必须提供）
 
     Returns:
         ExperienceBundle（包含本会话所有提取到的经验条目）
     """
+    # 默认启用 LLM 增强；显式传 client=None 则跳过
+    if client is _UNSET_CLIENT:
+        client = _auto_build_llm_client()
+
     session_id = ann_seq.metadata.session_id
     target_raw = ann_seq.metadata.target_raw
     session_outcome_str = "unknown"
@@ -293,7 +316,7 @@ def run_layer2(
 def run_layer2_batch(
     input_dir: Path,
     output_dir: Optional[Path] = None,
-    client=None,
+    client=_UNSET_CLIENT,
     save: bool = True,
 ) -> Iterator[ExperienceBundle]:
     """批量执行 Layer 2 流水线，处理 input_dir 下所有 layer1_*.jsonl 文件。
@@ -301,13 +324,17 @@ def run_layer2_batch(
     Args:
         input_dir  : Layer 1 输出目录（含 layer1_{session_id}.jsonl）
         output_dir : Layer 2 输出目录（None 时默认 input_dir/../layer2_output）
-        client     : LLMClient 实例（None 时跳过 LLM 步骤）
+        client     : LLMClient 实例；默认自动从配置文件构建
         save       : 是否将结果保存至磁盘
 
     Yields:
         每个会话的 ExperienceBundle
     """
     from ..layer1.pipeline import load_annotated_turn_sequence
+
+    # 默认启用 LLM 增强；显式传 client=None 则跳过
+    if client is _UNSET_CLIENT:
+        client = _auto_build_llm_client()
 
     if output_dir is None:
         output_dir = input_dir.parent / "layer2_output"

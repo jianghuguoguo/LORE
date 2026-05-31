@@ -27,7 +27,7 @@ llm:
 
   # 密钥解析优先级：环境变量 > api_key_literal
   api_key_env: "LLM_API_KEY"
-  api_key_literal: ""
+  api_key_literal: "sk-de4283774a11454b895f0bab4adba9d9"
 
   # 推理参数
   temperature: 0.0

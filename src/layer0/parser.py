@@ -279,20 +279,75 @@ class LogParser:
     # ─── 内部方法 ──────────────────────────────────────────────────────────
 
     def _iter_json_lines(self, path: Path) -> Iterator[Dict[str, Any]]:
-        """逐行读取并解析 JSONL 文件，跳过空行和解析失败行。"""
+        """逐行读取并解析 JSONL 文件，支持单行和多行两种格式。
+
+        多行格式：每个 JSON 对象跨多行（pretty-print），用空行分隔。
+        单行格式：每行一个完整 JSON 对象（标准 JSONL）。
+        两种格式混合也能正确处理。
+        """
+        _buf_lines: List[str] = []
+        _buf_start_lineno = 0
+        _brace_depth = 0
+        _in_record = False
+
+        def _flush_buffer(cur_lineno: int) -> Iterator[Dict[str, Any]]:
+            """尝试解析缓冲区中的累积内容。"""
+            nonlocal _buf_lines, _buf_start_lineno, _in_record, _brace_depth
+            if not _buf_lines:
+                return
+            block = "".join(_buf_lines)
+            _buf_lines = []
+            _in_record = False
+            _brace_depth = 0
+            try:
+                obj = json.loads(block)
+                if isinstance(obj, dict):
+                    yield obj
+                else:
+                    logger.debug("Skip non-object JSON at lines %d-%d in %s",
+                                 _buf_start_lineno, cur_lineno, path.name)
+            except json.JSONDecodeError as exc:
+                logger.warning("JSON parse error at lines %d-%d in %s: %s",
+                               _buf_start_lineno, cur_lineno, path.name, exc)
+
         with open(path, encoding="utf-8") as f:
             for lineno, raw in enumerate(f, start=1):
-                raw = raw.strip()
-                if not raw:
+                stripped = raw.rstrip("\n").rstrip("\r")
+
+                # ── 空行 → 刷新缓冲区（如果有未闭合的记录也尝试解析） ──
+                if not stripped.strip():
+                    yield from _flush_buffer(lineno)
                     continue
-                try:
-                    obj = json.loads(raw)
-                    if isinstance(obj, dict):
-                        yield obj
-                    else:
-                        logger.debug("Skip non-object JSON at line %d in %s", lineno, path.name)
-                except json.JSONDecodeError as exc:
-                    logger.warning("JSON parse error at line %d: %s", lineno, exc)
+
+                # ── 追踪大括号深度 ──
+                for ch in stripped:
+                    if ch == "{":
+                        if _brace_depth == 0 and not _in_record:
+                            _in_record = True
+                            _buf_start_lineno = lineno
+                        _brace_depth += 1
+                    elif ch == "}":
+                        _brace_depth -= 1
+
+                if _in_record:
+                    _buf_lines.append(stripped)
+                    # 大括号闭合且平衡 → 尝试解析
+                    if _brace_depth == 0:
+                        yield from _flush_buffer(lineno)
+                else:
+                    # 不在记录中 → 尝试作为独立行解析（兼容标准 JSONL）
+                    try:
+                        obj = json.loads(stripped)
+                        if isinstance(obj, dict):
+                            yield obj
+                        else:
+                            logger.debug("Skip non-object JSON at line %d in %s",
+                                         lineno, path.name)
+                    except json.JSONDecodeError as exc:
+                        logger.warning("JSON parse error at line %d: %s", lineno, exc)
+
+            # 文件末尾：刷新残留缓冲区
+            yield from _flush_buffer(lineno)
 
     def _run_state_machine(
         self,

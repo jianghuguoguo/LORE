@@ -1,0 +1,370 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1050" font-family="'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+    <marker id="arrow-light" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+      <path d="M0,0 L6,2 L0,4 Z" fill="#999"/>
+    </marker>
+    <linearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#333"/>
+      <stop offset="100%" stop-color="#555"/>
+    </linearGradient>
+    <linearGradient id="layerGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5f5f5"/>
+      <stop offset="100%" stop-color="#e8e8e8"/>
+    </linearGradient>
+    <filter id="shadow" x="-3%" y="-3%" width="106%" height="110%">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#ccc" flood-opacity="0.5"/>
+    </filter>
+    <filter id="shadowLight" x="-2%" y="-2%" width="104%" height="106%">
+      <feDropShadow dx="0.5" dy="1" stdDeviation="1" flood-color="#ddd" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="1400" height="1050" fill="#fafafa"/>
+
+  <!-- ============================================================ -->
+  <!-- 标题 -->
+  <!-- ============================================================ -->
+  <text x="700" y="38" text-anchor="middle" font-size="22" font-weight="bold" fill="#222">LORE 知识蒸馏流水线总览 (Layer 0–3)</text>
+  <text x="700" y="58" text-anchor="middle" font-size="12" fill="#888">原始日志 → 结构化提取 → 语义标注 → 经验蒸馏 → 跨会话融合 → RAGflow知识库</text>
+  <line x1="100" y1="68" x2="1300" y2="68" stroke="#ccc" stroke-width="0.5"/>
+
+  <!-- ============================================================ -->
+  <!-- 整体阶段区间 -->
+  <!-- ============================================================ -->
+
+  <!-- Layer 0 大框 -->
+  <rect x="35" y="82" width="310" height="910" rx="8" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="6,3"/>
+  <rect x="35" y="82" width="310" height="34" rx="8" fill="#111"/>
+  <rect x="35" y="100" width="310" height="16" fill="#111"/>
+  <text x="190" y="100" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">Layer 0 — 结构化事件提取</text>
+
+  <!-- Layer 1 大框 -->
+  <rect x="368" y="82" width="310" height="910" rx="8" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="6,3"/>
+  <rect x="368" y="82" width="310" height="34" rx="8" fill="#333"/>
+  <rect x="368" y="100" width="310" height="16" fill="#333"/>
+  <text x="523" y="100" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">Layer 1 — 语义标注</text>
+
+  <!-- Layer 2 大框 -->
+  <rect x="701" y="82" width="310" height="910" rx="8" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="6,3"/>
+  <rect x="701" y="82" width="310" height="34" rx="8" fill="#555"/>
+  <rect x="701" y="100" width="310" height="16" fill="#555"/>
+  <text x="856" y="100" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">Layer 2 — 经验提取</text>
+
+  <!-- Layer 3 大框 -->
+  <rect x="1034" y="82" width="340" height="910" rx="8" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="6,3"/>
+  <rect x="1034" y="82" width="340" height="34" rx="8" fill="#777"/>
+  <rect x="1034" y="100" width="340" height="16" fill="#777"/>
+  <text x="1204" y="100" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">Layer 3 — 经验融合</text>
+
+  <!-- ============================================================ -->
+  <!-- 输入行 -->
+  <!-- ============================================================ -->
+  <rect x="62" y="132" width="256" height="42" rx="20" fill="#e0e0e0" stroke="#999" stroke-width="1" filter="url(#shadowLight)"/>
+  <text x="190" y="148" text-anchor="middle" font-size="11" fill="#444">原始 JSONL 日志</text>
+  <text x="190" y="164" text-anchor="middle" font-size="9" fill="#888">CAI / LangChain / OpenAI Assistants</text>
+
+  <!-- 输入 → Layer0 箭头 -->
+  <line x1="318" y1="153" x2="340" y2="153" stroke="#555" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+  <!-- ============================================================ -->
+  <!-- Layer 0 内部流程 -->
+  <!-- ============================================================ -->
+
+  <!-- 格式识别 -->
+  <rect x="62" y="190" width="256" height="54" rx="6" fill="#e8e8e8" stroke="#aaa" stroke-width="1" filter="url(#shadowLight)"/>
+  <text x="190" y="210" text-anchor="middle" font-size="11" font-weight="bold" fill="#333">① 日志格式识别</text>
+  <text x="190" y="226" text-anchor="middle" font-size="9" fill="#777">AdapterRegistry 自动检测格式</text>
+  <text x="190" y="238" text-anchor="middle" font-size="9" fill="#777">CAI / LangChain / 通用适配器</text>
+  <line x1="190" y1="244" x2="190" y2="260" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- CAI 原生路径 -->
+  <rect x="62" y="262" width="256" height="72" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="190" y="279" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">② LogParser → 轮次重建</text>
+  <text x="190" y="294" text-anchor="middle" font-size="8.5" fill="#666">识别三段式结构：</text>
+  <text x="190" y="306" text-anchor="middle" font-size="8.5" fill="#666">assistant_message / API_request / chat.completion</text>
+  <text x="190" y="318" text-anchor="middle" font-size="8.5" fill="#666">提取 tool_calls + 工具执行结果</text>
+  <text x="190" y="330" text-anchor="middle" font-size="8.5" fill="#999">构建 Turn 对象（最小分析单元）</text>
+
+  <!-- 非CAI路径 -->
+  <rect x="62" y="340" width="256" height="42" rx="6" fill="#f0f0f0" stroke="#ccc" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="190" y="357" text-anchor="middle" font-size="9" fill="#888">非CAI路径: LogAdapter.parse()</text>
+  <text x="190" y="371" text-anchor="middle" font-size="9" fill="#888">→ CanonicalAgentTurn 标准中间表示</text>
+
+  <line x1="190" y1="334" x2="190" y2="340" stroke="#aaa" stroke-width="0.8"/>
+  <line x1="190" y1="382" x2="190" y2="392" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- EventExtractor -->
+  <rect x="62" y="394" width="256" height="66" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="190" y="411" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">③ EventExtractor → 原子事件</text>
+  <text x="190" y="426" text-anchor="middle" font-size="8.5" fill="#666">提取 CallDescriptor（工具名/参数/分类）</text>
+  <text x="190" y="438" text-anchor="middle" font-size="8.5" fill="#666">提取 ResultDescriptor（exit_code/超时/stderr...）</text>
+  <text x="190" y="450" text-anchor="middle" font-size="8.5" fill="#666">行为分类：RAG / CODE / COMMAND / STRUCTURED</text>
+
+  <line x1="190" y1="460" x2="190" y2="476" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Assembler -->
+  <rect x="62" y="478" width="256" height="72" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="190" y="495" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">④ TurnSequenceAssembler</text>
+  <text x="190" y="510" text-anchor="middle" font-size="8.5" fill="#666">has_rag_context 时间窗口标注 (N=3)</text>
+  <text x="190" y="522" text-anchor="middle" font-size="8.5" fill="#666">code_script_ref 脚本关联标注</text>
+  <text x="190" y="534" text-anchor="middle" font-size="8.5" fill="#666">事件排序 + 统计汇总</text>
+  <text x="190" y="546" text-anchor="middle" font-size="8.5" fill="#999">输出: TurnSequence</text>
+
+  <line x1="190" y1="550" x2="190" y2="568" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Layer0 输出 -->
+  <rect x="62" y="570" width="256" height="38" rx="18" fill="#ddd" stroke="#999" stroke-width="1.2" filter="url(#shadowLight)"/>
+  <text x="190" y="593" text-anchor="middle" font-size="11" font-weight="bold" fill="#444">▶ TurnSequence</text>
+
+  <!-- ============================================================ -->
+  <!-- Layer 0 → Layer 1 层间箭头 -->
+  <!-- ============================================================ -->
+  <line x1="345" y1="589" x2="368" y2="589" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============================================================ -->
+  <!-- Layer 1 内部流程 -->
+  <!-- ============================================================ -->
+
+  <rect x="396" y="570" width="256" height="38" rx="18" fill="#ddd" stroke="#999" stroke-width="1.2" filter="url(#shadowLight)"/>
+  <text x="524" y="593" text-anchor="middle" font-size="11" font-weight="bold" fill="#444">▶ TurnSequence</text>
+
+  <line x1="524" y1="570" x2="524" y2="554" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- 确定性规则 -->
+  <rect x="396" y="474" width="256" height="78" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="524" y="491" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">① 确定性规则引擎</text>
+  <text x="524" y="506" text-anchor="middle" font-size="8.5" fill="#666">RC-127 → ENV-BINARY_MISSING</text>
+  <text x="524" y="518" text-anchor="middle" font-size="8.5" fill="#666">RC-126 → ENV-EXECUTE_PERMISSION_DENIED</text>
+  <text x="524" y="530" text-anchor="middle" font-size="8.5" fill="#666">RC-124/TOUT → ENV-TIMEOUT</text>
+  <text x="524" y="542" text-anchor="middle" font-size="8.5" fill="#666">RC-130 → ENV-INTERRUPTED 等</text>
+
+  <line x1="524" y1="474" x2="524" y2="458" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- needs_llm 标注 -->
+  <rect x="396" y="396" width="256" height="44" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="524" y="413" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">② needs_llm 标注</text>
+  <text x="524" y="429" text-anchor="middle" font-size="8.5" fill="#666">规则未覆盖事件 → 标记待 LLM 处理</text>
+
+  <line x1="524" y1="440" x2="524" y2="458" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- 以上是 Phase2 -->
+  <rect x="400" y="350" width="248" height="28" rx="4" fill="#ddd" stroke="#ccc" stroke-width="0.8"/>
+  <text x="524" y="368" text-anchor="middle" font-size="9" fill="#777">Phase 2 — 确定性规则 (100% 可靠)</text>
+
+  <line x1="524" y1="350" x2="524" y2="336" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- LLM 语义理解 -->
+  <rect x="396" y="254" width="256" height="80" rx="6" fill="#f0f0f0" stroke="#bbb" stroke-width="1.5"/>
+  <text x="524" y="271" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">③ LLM 语义理解 (Phase 3)</text>
+  <text x="524" y="287" text-anchor="middle" font-size="8.5" fill="#666">attack_phase 攻击阶段判定</text>
+  <text x="524" y="299" text-anchor="middle" font-size="8.5" fill="#666">failure_cause 失败根因分析</text>
+  <text x="524" y="311" text-anchor="middle" font-size="8.5" fill="#666">RAG 因果关联 (检索→采纳)</text>
+  <text x="524" y="323" text-anchor="middle" font-size="8.5" fill="#666">session_outcome 会话成败判定</text>
+
+  <line x1="524" y1="254" x2="524" y2="238" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Layer1 输出 -->
+  <rect x="396" y="190" width="256" height="46" rx="6" fill="#e8e8e8" stroke="#aaa" stroke-width="1.2" filter="url(#shadowLight)"/>
+  <text x="524" y="208" text-anchor="middle" font-size="9" fill="#888">AnnotatedEvent × N</text>
+  <text x="524" y="224" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">▶ AnnotatedTurnSequence</text>
+
+  <!-- ============================================================ -->
+  <!-- Layer 1 → Layer 2 层间箭头 -->
+  <!-- ============================================================ -->
+  <line x1="678" y1="213" x2="701" y2="213" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============================================================ -->
+  <!-- Layer 2 内部流程 -->
+  <!-- ============================================================ -->
+
+  <rect x="728" y="190" width="256" height="46" rx="6" fill="#e8e8e8" stroke="#aaa" stroke-width="1.2" filter="url(#shadowLight)"/>
+  <text x="856" y="208" text-anchor="middle" font-size="9" fill="#888">AnnotatedTurnSequence</text>
+  <text x="856" y="224" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">▶ 标注后会话数据</text>
+
+  <line x1="856" y1="236" x2="856" y2="254" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Step 1 规则FACTUAL -->
+  <rect x="728" y="256" width="256" height="54" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="856" y="273" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Step 1 — FACTUAL 规则提取</text>
+  <text x="856" y="288" text-anchor="middle" font-size="8.5" fill="#666">从工具调用中提取事实信息</text>
+  <text x="856" y="301" text-anchor="middle" font-size="8.5" fill="#666">版本号 / 服务名 / CVE 编号 / 端口 / 路径</text>
+
+  <line x1="856" y1="310" x2="856" y2="324" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Step 1.5 LLM FACTUAL -->
+  <rect x="728" y="326" width="256" height="44" rx="6" fill="#f0f0f0" stroke="#bbb" stroke-width="1.5"/>
+  <text x="856" y="343" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Step 1.5 — FACTUAL (LLM)</text>
+  <text x="856" y="358" text-anchor="middle" font-size="8.5" fill="#666">LLM 识别目标服务 / CVE 上下文</text>
+
+  <line x1="856" y1="370" x2="856" y2="384" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Step 2 PROCEDURAL -->
+  <rect x="728" y="386" width="256" height="64" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="856" y="403" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Step 2 — PROCEDURAL 提取</text>
+  <text x="856" y="418" text-anchor="middle" font-size="8.5" fill="#666">POS: 成功策略路径 (IF-THEN-NOT)</text>
+  <text x="856" y="431" text-anchor="middle" font-size="8.5" fill="#666">NEG: 失败/被防御路径 (defense_mechanism)</text>
+  <text x="856" y="444" text-anchor="middle" font-size="8.5" fill="#666">延迟 NEG 决策规则 LLM 判断</text>
+
+  <line x1="856" y1="450" x2="856" y2="464" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Step 3 METACOGNITIVE -->
+  <rect x="728" y="466" width="256" height="50" rx="6" fill="#f0f0f0" stroke="#bbb" stroke-width="1.5"/>
+  <text x="856" y="483" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Step 3 — METACOGNITIVE (LLM)</text>
+  <text x="856" y="498" text-anchor="middle" font-size="8.5" fill="#666">决策教训 / 策略反思 / 元认知经验</text>
+
+  <line x1="856" y1="516" x2="856" y2="530" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Step 4 CONCEPTUAL -->
+  <rect x="728" y="532" width="256" height="44" rx="6" fill="#f0f0f0" stroke="#bbb" stroke-width="1.5"/>
+  <text x="856" y="549" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Step 4 — CONCEPTUAL (LLM)</text>
+  <text x="856" y="564" text-anchor="middle" font-size="8.5" fill="#666">抽象规律 / 概念性经验归纳</text>
+
+  <line x1="856" y1="576" x2="856" y2="590" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Step 5 去重统计 -->
+  <rect x="728" y="592" width="256" height="42" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="856" y="609" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Step 5 — 会话内去重 + 统计</text>
+  <text x="856" y="624" text-anchor="middle" font-size="8.5" fill="#666">去重 + 服务名回填 + CVE 合并</text>
+
+  <line x1="856" y1="634" x2="856" y2="650" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Layer2 输出 -->
+  <rect x="728" y="652" width="256" height="46" rx="6" fill="#e0e0e0" stroke="#999" stroke-width="1.2" filter="url(#shadowLight)"/>
+  <text x="856" y="670" text-anchor="middle" font-size="10" font-weight="bold" fill="#444">▶ ExperienceBundle</text>
+  <text x="856" y="686" text-anchor="middle" font-size="8.5" fill="#888">FACTUAL / PROCEDURAL / METACOGNITIVE / CONCEPTUAL</text>
+
+  <!-- ============================================================ -->
+  <!-- Layer 2 → Layer 3 层间箭头 -->
+  <!-- ============================================================ -->
+  <line x1="1011" y1="675" x2="1034" y2="675" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============================================================ -->
+  <!-- Layer 3 内部流程 -->
+  <!-- ============================================================ -->
+
+  <rect x="1062" y="652" width="286" height="46" rx="6" fill="#e0e0e0" stroke="#999" stroke-width="1.2" filter="url(#shadowLight)"/>
+  <text x="1205" y="669" text-anchor="middle" font-size="9" fill="#888">多个会话的 ExperienceBundle</text>
+  <text x="1205" y="686" text-anchor="middle" font-size="10" font-weight="bold" fill="#444">▶ 全量经验集合</text>
+
+  <line x1="1205" y1="652" x2="1205" y2="634" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Phase 1 SEC -->
+  <rect x="1062" y="556" width="286" height="76" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="1205" y="573" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Phase 1 — SEC 语义等价聚类</text>
+  <text x="1205" y="589" text-anchor="middle" font-size="8.5" fill="#666">四层匹配策略：</text>
+  <text x="1205" y="601" text-anchor="middle" font-size="8.5" fill="#666">L1 硬键 (knowledge_layer / target_service)</text>
+  <text x="1205" y="613" text-anchor="middle" font-size="8.5" fill="#666">L2 CVE 交集 ≥ 1 · L3 语义嵌入 (cos>0.82)</text>
+  <text x="1205" y="625" text-anchor="middle" font-size="8.5" fill="#666">L4 版本约束 → EquivalenceSet</text>
+
+  <line x1="1205" y1="632" x2="1205" y2="648" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Phase 1+2 -->
+  <rect x="1065" y="530" width="280" height="20" rx="3" fill="#ddd" stroke="#ccc" stroke-width="0.8"/>
+  <text x="1205" y="544" text-anchor="middle" font-size="8" fill="#777">Phase 1+2 一同执行</text>
+
+  <line x1="1205" y1="530" x2="1205" y2="514" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Phase 2 EWC -->
+  <rect x="1062" y="438" width="286" height="74" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="1205" y="455" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Phase 2 — EWC 证据权重计算</text>
+  <text x="1205" y="471" text-anchor="middle" font-size="8.5" fill="#666">四维权重模型：</text>
+  <text x="1205" y="485" text-anchor="middle" font-size="8.5" fill="#666">W = w_quality × w_maturity × w_outcome × w_coverage</text>
+  <text x="1205" y="499" text-anchor="middle" font-size="8.5" fill="#666">时效衰减 W_eff = W × exp(−λ×Δt)</text>
+  <text x="1205" y="511" text-anchor="middle" font-size="8.5" fill="#666">→ WeightedExperience × N</text>
+
+  <line x1="1205" y1="512" x2="1205" y2="530" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Phase 3 RME -->
+  <rect x="1062" y="356" width="286" height="80" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="1205" y="373" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Phase 3 — RME 规则融合引擎</text>
+  <text x="1205" y="389" text-anchor="middle" font-size="8.5" fill="#666">层特定融合策略：</text>
+  <text x="1205" y="403" text-anchor="middle" font-size="8.5" fill="#666">PROCEDURAL_NEG: IF加权交集 + THEN多数投票</text>
+  <text x="1205" y="415" text-anchor="middle" font-size="8.5" fill="#666">PROCEDURAL_POS: preconditions并集 + indicators投票</text>
+  <text x="1205" y="427" text-anchor="middle" font-size="8.5" fill="#666">FACTUAL/METACOGNITIVE/CONCEPTUAL 各自策略</text>
+  <text x="1205" y="439" text-anchor="middle" font-size="8.5" fill="#666">冲突检测 → MergeResult</text>
+
+  <line x1="1205" y1="436" x2="1205" y2="452" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Phase 3+4 -->
+  <rect x="1065" y="334" width="280" height="20" rx="3" fill="#ddd" stroke="#ccc" stroke-width="0.8"/>
+  <text x="1205" y="348" text-anchor="middle" font-size="8" fill="#777">Phase 3+4 一同执行</text>
+
+  <line x1="1205" y1="334" x2="1205" y2="316" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Phase 4 BCC -->
+  <rect x="1062" y="236" width="286" height="78" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="1205" y="253" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Phase 4 — BCC 贝叶斯置信度校准</text>
+  <text x="1205" y="269" text-anchor="middle" font-size="8.5" fill="#666">P_fused = 1 − ∏(1 − P_i × W_i)</text>
+  <text x="1205" y="283" text-anchor="middle" font-size="8.5" fill="#666">成熟度升级：P≥0.60→validated  P≥0.80→consolidated</text>
+  <text x="1205" y="297" text-anchor="middle" font-size="8.5" fill="#666">独立 session 数 n≥2 → n≥3 → 强反例≥2 降级</text>
+  <text x="1205" y="311" text-anchor="middle" font-size="8.5" fill="#666">→ ConsolidatedExp</text>
+
+  <line x1="1205" y1="314" x2="1205" y2="332" stroke="#999" stroke-width="1" marker-end="url(#arrow-light)"/>
+
+  <!-- Phase 5 KLM -->
+  <rect x="1062" y="148" width="286" height="86" rx="6" fill="#eee" stroke="#bbb" stroke-width="1.2"/>
+  <text x="1205" y="165" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Phase 5 — KLM 知识生命周期管理</text>
+  <text x="1205" y="181" text-anchor="middle" font-size="8.5" fill="#666">操作1: 回流标记 (consolidated→reflux)</text>
+  <text x="1205" y="193" text-anchor="middle" font-size="8.5" fill="#666">操作2: 冲突标记 (conflicted 源经验)</text>
+  <text x="1205" y="205" text-anchor="middle" font-size="8.5" fill="#666">操作3: 时效衰减 (W&lt;0.10→suspended)</text>
+  <text x="1205" y="217" text-anchor="middle" font-size="8.5" fill="#666">生命周期: active/archived/conflicted/suspended</text>
+  <text x="1205" y="231" text-anchor="middle" font-size="8.5" fill="#666">→ KlmResult</text>
+
+  <!-- ============================================================ -->
+  <!-- 最终输出 -->
+  <!-- ============================================================ -->
+
+  <!-- Layer3 输出框 -->
+  <rect x="1062" y="104" width="286" height="36" rx="18" fill="#aaa" stroke="#777" stroke-width="1.2" filter="url(#shadowLight)"/>
+  <text x="1205" y="126" text-anchor="middle" font-size="11" font-weight="bold" fill="#222">▶ 融合后知识库经验 (RAGflow)</text>
+
+  <!-- ============================================================ -->
+  <!-- 右侧说明图例 -->
+  <!-- ============================================================ -->
+
+  <rect x="1064" y="706" width="284" height="140" rx="6" fill="#f8f8f8" stroke="#ddd" stroke-width="1"/>
+  <text x="1205" y="725" text-anchor="middle" font-size="11" font-weight="bold" fill="#444">数据流转示意</text>
+  <line x1="1076" y1="734" x2="1336" y2="734" stroke="#ddd" stroke-width="0.5"/>
+
+  <rect x="1078" y="744" width="60" height="18" rx="3" fill="#e8e8e8" stroke="#aaa" stroke-width="0.8"/>
+  <text x="1108" y="757" text-anchor="middle" font-size="8" fill="#555">TurnSequence</text>
+  <text x="1150" y="757" font-size="8" fill="#999">→ 结构化事件序列</text>
+
+  <rect x="1078" y="770" width="60" height="18" rx="3" fill="#e8e8e8" stroke="#aaa" stroke-width="0.8"/>
+  <text x="1108" y="783" text-anchor="middle" font-size="8" fill="#555">Annotated...</text>
+  <text x="1150" y="783" font-size="8" fill="#999">→ 带语义标注的事件</text>
+
+  <rect x="1078" y="796" width="60" height="18" rx="3" fill="#e0e0e0" stroke="#999" stroke-width="0.8"/>
+  <text x="1108" y="809" text-anchor="middle" font-size="8" fill="#555">Experience...</text>
+  <text x="1150" y="809" font-size="8" fill="#999">→ 结构化经验条目</text>
+
+  <rect x="1078" y="822" width="60" height="18" rx="3" fill="#ddd" stroke="#999" stroke-width="0.8"/>
+  <text x="1108" y="835" text-anchor="middle" font-size="8" fill="#555">Consolid...</text>
+  <text x="1150" y="835" font-size="8" fill="#999">→ 融合后权威经验</text>
+
+  <!-- ============================================================ -->
+  <!-- 底部流水线总览条 -->
+  <!-- ============================================================ -->
+  <rect x="35" y="998" width="1340" height="38" rx="4" fill="#f0f0f0" stroke="#ccc" stroke-width="0.8"/>
+
+  <text x="175" y="1021" text-anchor="middle" font-size="10" fill="#555">原始日志</text>
+  <text x="245" y="1021" text-anchor="middle" font-size="12" fill="#999">→</text>
+  <text x="340" y="1021" text-anchor="middle" font-size="10" fill="#555">Layer 0</text>
+  <text x="410" y="1021" text-anchor="middle" font-size="10" fill="#777">事件提取</text>
+  <text x="490" y="1021" text-anchor="middle" font-size="12" fill="#999">→</text>
+  <text x="585" y="1021" text-anchor="middle" font-size="10" fill="#555">Layer 1</text>
+  <text x="655" y="1021" text-anchor="middle" font-size="10" fill="#777">语义标注</text>
+  <text x="735" y="1021" text-anchor="middle" font-size="12" fill="#999">→</text>
+  <text x="830" y="1021" text-anchor="middle" font-size="10" fill="#555">Layer 2</text>
+  <text x="900" y="1021" text-anchor="middle" font-size="10" fill="#777">经验蒸馏</text>
+  <text x="980" y="1021" text-anchor="middle" font-size="12" fill="#999">→</text>
+  <text x="1075" y="1021" text-anchor="middle" font-size="10" fill="#555">Layer 3</text>
+  <text x="1145" y="1021" text-anchor="middle" font-size="10" fill="#777">经验融合</text>
+  <text x="1225" y="1021" text-anchor="middle" font-size="12" fill="#999">→</text>
+  <text x="1300" y="1021" text-anchor="middle" font-size="10" fill="#555">RAGflow 知识库</text>
+
+</svg>

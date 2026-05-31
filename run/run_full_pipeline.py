@@ -1,39 +1,38 @@
-﻿"""
-run/run_full_pipeline.py
-========================
-LORE 全流程 CLI 后端入口。
+"""
+run_full_pipeline.py
+====================
+RefPenTest 全流程 CLI 后端入口。
 
 串联执行五层知识蒸馏流水线：
 
     Layer 0  日志标准化 (AdapterRegistry → CanonicalAgentTurn)
     Layer 1  LLM 会话标注 (outcome / CVE / failure_root_cause)
-    Layer 2  经验蒸馏 (五类结构化经验，不上传)
-    Layer 3  XPEC 跨会话融合 (Phase 1-5: SEC / EWC / RME / BCC / KLM)
-    Reflux   RAGflow 经验回流上传（正常写入）
+    Layer 2  经验蒸馏 + RAGflow 上传 (五类结构化经验)
+    Layer 3  XPEC 跨会话融合 (Phase 1-4: SEC / EWC / RME / BCC)
 
 每阶段结果持久化到::
 
     data/layer0_output/      — 标准化 TurnSequence
     data/layer1_output/      — LLM 标注结果
     data/layer2_output/      — 五类经验 + experience_raw.jsonl
-    data/layer3_output/      — 等价集 / ConsolidatedExp / KLM 注册表
+    data/layer3_output/      — 等价集 / ConsolidatedExp
 
 用法::
 
     # 完整流水线（默认）
-    python run/run_full_pipeline.py
+    python run_full_pipeline.py
 
     # 仅运行指定阶段（可组合）
-    python run/run_full_pipeline.py --stages layer0 layer1 layer2
+    python run_full_pipeline.py --stages layer0 layer1 layer2
 
     # 跳过 RAGflow 上传
-    python run/run_full_pipeline.py --no-ragflow
+    python run_full_pipeline.py --no-ragflow
 
     # 详细日志
-    python run/run_full_pipeline.py --verbose
+    python run_full_pipeline.py --verbose
 
     # 显示当前流水线阶段状态（不执行）
-    python run/run_full_pipeline.py --status
+    python run_full_pipeline.py --status
 
 退出码::
 
@@ -78,7 +77,7 @@ try:
 except ImportError:
     _RICH = False  # type: ignore
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 阶段定义
@@ -89,7 +88,7 @@ _STAGES: List[Tuple[str, str, str, str]] = [
     (
         "layer0",
         "Layer 0  日志标准化",
-        "python run/run_layer0.py --log-dir logs --output-dir data/layer0_output",
+        "python scripts/run_layer0.py --log-dir logs --output-dir data/layer0_output",
         "data/layer0_output",
     ),
     (
@@ -117,12 +116,6 @@ _STAGES: List[Tuple[str, str, str, str]] = [
         "data/layer3_output/phase34_consolidated.jsonl",
     ),
     (
-        "layer3_p5",
-        "Layer 3  Phase 5    KLM",
-        "python run/run_layer3_phase5.py",
-        "data/layer3_output/phase5_klm_registry.jsonl",
-    ),
-    (
         "layer4",
         "Layer 4  缺口感知 + 冲突检测",
         "python run/run_layer4_gap_dispatch.py --no-crawl",
@@ -130,9 +123,9 @@ _STAGES: List[Tuple[str, str, str, str]] = [
     ),
     (
         "upload",
-        "Upload   上传 Layer3 融合经验到 RAGflow",
-        "python -m src.ragflow.uploader --source fused",
-        "data/layer3_output/phase34_consolidated.jsonl",
+        "Upload   经验统一上传 RAGflow",
+        "python src/ragflow_uploader.py",
+        "data/layer2_output",
     ),
 ]
 
@@ -220,7 +213,7 @@ def show_status() -> None:
 
     if _RICH:
         table = Table(
-            title="LORE 流水线阶段状态",
+            title="RefPenTest 流水线阶段状态",
             box=box.ROUNDED,
             border_style="cyan",
             header_style="bold cyan",
@@ -256,7 +249,7 @@ def show_status() -> None:
         _console.print(table)
         _console.print()
     else:
-        print("\nLORE 流水线阶段状态")
+        print("\nRefPenTest 流水线阶段状态")
         print("-" * 70)
         for i, (key, label, _cmd, output_path) in enumerate(_STAGES, 1):
             rec = state.get(key, {})
@@ -390,17 +383,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="run_full_pipeline",
         description=(
-            "LORE 全流程 CLI — 五层知识蒸馏流水线\n\n"
+            "RefPenTest 全流程 CLI — 五层知识蒸馏流水线\n\n"
             "阶段键值：" + "  ".join(_STAGE_KEYS)
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "示例:\n"
-            "  python run/run_full_pipeline.py                      # 完整流水线\n"
-            "  python run/run_full_pipeline.py --stages layer1 layer2  # 仅标注+蒸馏\n"
-            "  python run/run_full_pipeline.py --no-ragflow          # 跳过末尾统一上传（离线调试用）\n"
-            "  python run/run_full_pipeline.py --status              # 展示各阶段状态\n"
-            "  python run/run_full_pipeline.py --verbose             # 详细日志\n"
+            "  python run_full_pipeline.py                      # 完整流水线\n"
+            "  python run_full_pipeline.py --stages layer1 layer2  # 仅标注+蒸馏\n"
+            "  python run_full_pipeline.py --no-ragflow          # 跳过末尾统一上传（离线调试用）\n"
+            "  python run_full_pipeline.py --status              # 展示各阶段状态\n"
+            "  python run_full_pipeline.py --verbose             # 详细日志\n"
         ),
     )
 
@@ -442,7 +435,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version="LORE run_full_pipeline 1.0.0",
+        version="RefPenTest run_full_pipeline 1.0.0",
     )
     return parser
 
@@ -478,7 +471,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if _RICH:
         _console.print()
         _console.print(Panel.fit(
-            "[bold cyan]LORE[/]  全流程知识蒸馏流水线\n"
+            "[bold cyan]RefPenTest[/]  全流程知识蒸馏流水线\n"
             f"[dim]阶段: {', '.join(s[0] for s in stages_to_run)}[/]\n"
             f"[dim]末尾RAGflow上传: {'已禁用' if args.no_ragflow else '已启用'}[/]  "
             f"[dim]详细日志: {'是' if args.verbose else '否'}[/]",
@@ -488,7 +481,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         _console.print()
     else:
         _print_header(
-            f"LORE 全流程知识蒸馏流水线\n"
+            f"RefPenTest 全流程知识蒸馏流水线\n"
             f"  阶段: {', '.join(s[0] for s in stages_to_run)}"
         )
 
@@ -559,4 +552,3 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

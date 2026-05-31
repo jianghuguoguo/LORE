@@ -41,8 +41,9 @@ from ..utils.parameterizer import (
 # RECON/ENV 阶段：提取端口/服务/路径等探测结果
 _RECON_PHASES = {"RECON_WEAPONIZATION", "ENV_PREPARATION"}
 # 全阶段均可产生 FACTUAL（EXPLOITATION 可验证 root/flag/SUID 等）
+# 注意：COMMAND_CONTROL 阶段的 C2 通信行为无实证事实价值，已排除
 _ALL_PHASES_FACTUAL = _RECON_PHASES | {
-    "EXPLOITATION", "ESCALATION", "LATERAL_MOVEMENT", "EXFILTRATION", "COMMAND_CONTROL"
+    "EXPLOITATION", "ESCALATION", "LATERAL_MOVEMENT", "EXFILTRATION"
 }
 _SUCCESS_OUTCOMES = {"success", "partial_success"}
 _RECON_FACTUAL_OUTCOMES = {"success", "partial_success", "uncertain"}
