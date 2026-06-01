@@ -56,7 +56,7 @@ python -c "from src.layer0 import run_layer0; print('OK')"
 llm:
   provider: deepseek
   model: deepseek-chat
-  api_key: "sk-..."   # 或设置环境变量 DEEPSEEK_API_KEY
+    api_key: "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"   # 或设置环境变量 DEEPSEEK_API_KEY
 ```
 
 ---

@@ -31,7 +31,7 @@ llm:
   # - 若使用 `api_key_literal`，填写实际密钥（仅用于本地测试，切勿提交仓库）。
   # - 常见示例：OpenAI 风格为 `sk-...`，其它供应商为任意 token 字符串。
   api_key_env: "LLM_API_KEY"
-  api_key_literal: "xxx"
+  api_key_literal: "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
   # 推理参数
   temperature: 0.0
@@ -66,13 +66,13 @@ ragflow:
   # - 示例：b5f3a66f065f11f1bca40242ac120006（仅示例，替换为你的实例 ID）。
   datasets:
     # Layer4 / 回流主库
-    experience: "xxx"
+    experience: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     # Layer3 分层上传路由
-    factual: "xxx"
-    procedural_pos: "xxx"
-    procedural_neg: "xxx"
-    metacognitive: "xxx"
+    factual: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    procedural_pos: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    procedural_neg: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    metacognitive: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     # 全量归档预留（默认路由不使用）
-    full: "xxx"
+    full: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     # 回流次级库（可为空）
-    secondary: "xxx"
+    secondary: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"

@@ -13,9 +13,9 @@ uploader.py
 - 使用 API Key 鉴权（Bearer），token 会在进程内缓存
 - RAG_EVALUATION 层不上传（无 Agent 检索价值）
 
-目标库：
-  经验库   EXPERIENCE_DATASET_ID = b5f3a66f065f11f1bca40242ac120006
-  完整语料库 FULL_DATASET_ID      = b877bec1065c11f1a8960242ac120006
+    目标库：
+    经验库   EXPERIENCE_DATASET_ID = xxx
+    完整语料库 FULL_DATASET_ID      = xxx
     说明：生产路由中 CONCEPTUAL 与 METACOGNITIVE 统一进入 meta_conceptual
              （dataset_metacognitive）；FULL_DATASET_ID 仅作为全量归档预留，不参与默认分层上传。
 

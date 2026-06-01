@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 ```yaml
 llm:
-  api_key_literal: "sk-your-deepseek-key"   # 必填
+  api_key_literal: "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"   # 必填（示例占位，或使用环境变量 DEEPSEEK_API_KEY）
   base_url: "https://api.deepseek.com"
   model: "deepseek-chat"
 ```
@@ -55,7 +55,7 @@ llm:
 ragflow:
   host: "http://your-ragflow-host"
   email: "your@email.com"
-  password: "your-password"
+  password: "xxxxxxxxxxxxxxxx"  # 请使用专用服务账号密码（示例占位，长度可自适应）
   experience_dataset: "your-dataset-id"
 ```
 
@@ -64,8 +64,8 @@ ragflow:
 编辑 `crawlers/config.py`：
 
 ```python
-CSDN_COOKIE    = "your_csdn_cookie"    # 解锁 CSDN VIP 内容
-GITHUB_TOKEN   = "ghp_your_token"      # GitHub API 速率 5000→ →/h
+CSDN_COOKIE    = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"    # 请通过环境变量注入真实 cookie
+GITHUB_TOKEN   = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"      # 请通过环境变量注入真实 GitHub token
 REQUEST_DELAY  = (2, 4)               # 请求间隔（秒），避免限流
 ```
 

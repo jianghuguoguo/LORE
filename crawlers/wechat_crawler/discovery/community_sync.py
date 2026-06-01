@@ -30,6 +30,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
+import os
 
 # ── sys.path：供 discovery.* 和 crawlers.wechat_crawler.* 导入 ───────────────
 _WC = Path(__file__).parent.parent   # crawlers/wechat_crawler/
@@ -52,8 +53,8 @@ _SEED_FILE  = _WC / 'seed_accounts.yaml'
 _C_OUTPUT   = _DISC_DIR / 'channel_c_candidates.json'
 
 # ── DeepSeek API 配置（与项目 run_layer2_analysis.py 保持一致）───────────────
-_DEEPSEEK_API_KEY  = 'sk-6bd4ea2482004f44bef2a842a4badc06'
-_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/chat/completions'
+_DEEPSEEK_API_KEY  = os.environ.get('DEEPSEEK_API_KEY', 'xxx')  # 建议通过环境变量注入实际 Key
+_DEEPSEEK_BASE_URL = os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/chat/completions')
 _DEEPSEEK_MODEL    = 'deepseek-chat'
 
 # ── VPN 代理（项目统一使用 7890）─────────────────────────────────────────────
