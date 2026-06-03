@@ -6,11 +6,7 @@ git clone <your-repo-url>
 <div align="center">
 
 ### Reflective Offensive Knowledge Distillation Engine
-#### *Crypto · Password · PKI · Protocol Attack Intelligence*
-
 LORE extracts reusable offensive and defensive knowledge from real penetration testing sessions and builds an evolving, searchable, and reflow-capable security knowledge base.
-
-This project specializes in cryptography- and password-related attack knowledge, providing systematic support for red-team and blue-team workflows.
 
 Badges
 
@@ -23,7 +19,7 @@ Badges
 ## Table of Contents
 
 - Project Overview
-- Password & Crypto Support
+
 - Core Capabilities
 - System Architecture
 - Knowledge Layer Model
@@ -50,36 +46,6 @@ One-line summary:
 - Input: real penetration session logs + multi-source security corpora
 - Process: Layer 0~4 pipeline distillation + XPEC fusion + gap-driven crawling
 - Output: retrievable, explainable artifacts served via RAGFlow
-
----
-
-## Password & Cryptographic Attack Support
-
-LORE provides end-to-end support for password attacks and cryptographic protocol attacks, including automated extraction of successful command sequences, failure analysis, and defensive insights.
-
-Examples include:
-
-- Password attacks (dictionary/rule-based cracking, spraying, credential stuffing)
-- Hash cracking workflows (hashcat/John examples)
-- TLS/SSL downgrade exploitation and MITM techniques
-- Kerberos attacks (AS-REP Roasting, Kerberoasting)
-- JWT algorithm confusion, RSA common-modulus attacks, padding oracle patterns
-
-Example crawler commands:
-
-```bash
-# Crawl TLS/SSL CVE intelligence
-python crawlers/main_crawler.py --all -q "TLS downgrade CVE" --yes
-
-# Crawl Kerberos technique articles
-python crawlers/main_crawler.py --sources github,csdn -q "Kerberoasting AS-REP Roasting" --max-pages 10
-
-# Crawl hashcat rules and cracking tips
-python crawlers/main_crawler.py --sources github -q "hashcat rules NTLM crack" --max-pages 8
-
-# Sync NVD entries related to cryptography
-python crawlers/sync_data_light.py --repos nvd
-```
 
 ---
 
@@ -228,9 +194,6 @@ Multi-source crawlers examples:
 ```bash
 # Generic vulnerability intelligence
 python crawlers/main_crawler.py --all -q "CVE-2024-xxxx" --yes
-
-# Password/crypto focused
-python crawlers/main_crawler.py --all -q "Kerberoasting NTLM relay" --yes
 ```
 
 External sync:

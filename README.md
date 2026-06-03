@@ -7,10 +7,7 @@
 <div align="center">
 
 ### Reflective Offensive Knowledge Distillation Engine
-#### *Crypto · Password · PKI · Protocol Attack Intelligence*
-
 从真实渗透测试会话中，自动提炼可复用攻防经验，持续构建可检索、可回流、可演进的安全知识库。
-专项覆盖**密码学漏洞利用**与**口令攻击**全谱系，为红队/蓝队密码相关渗透测试提供系统化智力支撑。
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-Dashboard-000000?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
@@ -25,7 +22,7 @@
 ## 目录
 
 - [项目定位](#项目定位)
-- [密码相关渗透测试支持](#密码相关渗透测试支持)
+
 - [核心能力](#核心能力)
 - [系统架构](#系统架构)
 - [知识层模型](#知识层模型)
@@ -47,60 +44,12 @@
 
 LORE（Reflective Penetration Testing）是一个面向渗透测试场景的多层知识蒸馏系统。
 它将原始攻防日志转化为五类结构化经验，并通过跨会话融合与缺口感知机制，让知识库持续迭代。
-**密码学攻防**是 LORE 的核心覆盖领域，系统原生支持从口令爆破、哈希破解、协议弱密码检测，
-到 PKI 证书伪造、加密算法降级攻击等全链路密码相关渗透知识的自动沉淀与检索增强。
 
 一句话概括：
 
-- 输入：真实渗透会话日志与多源安全语料（含大量密码学漏洞案例与 CTF 密码题解）
+- 输入：真实渗透会话日志与多源安全语料
 - 处理：Layer 0~4 流水线蒸馏 + XPEC 融合 + 缺口定向爬取
 - 输出：可检索、可解释、可回流 RAGFlow 的安全经验知识库
-
----
-
-## 密码相关渗透测试支持
-
-LORE 在密码学攻防方向提供从情报采集、知识蒸馏到检索增强的一体化支撑：
-
-### 口令攻击（Password Attacks）
-
-| 场景 | LORE 支持 |
-|---|---|
-| 字典 / 规则爆破（Hashcat、John、Hydra） | 自动提炼成功命令序列与字典策略（PROCEDURAL_POS） |
-| 密码喷洒（Password Spraying）| 记录适用账号锁定策略与绕过技巧（METACOGNITIVE） |
-| 凭证填充（Credential Stuffing）| 沉淀目标系统特征与防御绕过经验（METACOGNITIVE） |
-| Windows 哈希抓取（Mimikatz / LSASS） | 结构化记录前置提权路径与检测规避（PROCEDURAL_POS/NEG） |
-| Linux Shadow 文件提取与破解 | 权限链路与 hashcat 规则库经验复用 |
-
-### 密码学协议攻击（Cryptographic Protocol Attacks）
-
-| 场景 | LORE 支持 |
-|---|---|
-| SSL/TLS 降级（BEAST、POODLE、DROWN） | CVE 精准定位 + 利用步骤 + PoC 复现（FACTUAL + PROCEDURAL_POS） |
-| HTTPS 证书校验绕过 / 中间人（MITM） | 工具链（mitmproxy、Burp）配置经验与流量分析技巧 |
-| WPA/WPA2 握手包捕获与破解 | airodump-ng + hashcat 完整作战流程 |
-| Kerberos 攻击（AS-REP Roasting、Kerberoasting）| 票据提取 → 离线破解全流程（PROCEDURAL_POS） |
-| 弱 JWT 签名算法利用（alg:none / HS256 → RS256 混淆）| 算法混淆原理 + 伪造 payload 构造（CONCEPTUAL） |
-| RSA 小公钥指数 / 共模攻击 | 数学原理 + Python 自动化脚本经验 |
-| 哈希长度扩展攻击 | CTF / 实战场景归纳（FACTUAL + PROCEDURAL_POS） |
-
-### 密码学漏洞情报采集
-
-LORE 爬虫模块可定向抓取密码学相关漏洞情报：
-
-```bash
-# 抓取 TLS/SSL CVE 情报
-python crawlers/main_crawler.py --all -q "TLS downgrade CVE" --yes
-
-# 抓取 Kerberos 攻击技术文章
-python crawlers/main_crawler.py --sources github,csdn -q "Kerberoasting AS-REP Roasting" --max-pages 10
-
-# 抓取密码哈希破解相关资料
-python crawlers/main_crawler.py --sources github -q "hashcat rules NTLM crack" --max-pages 8
-
-# 同步 NVD 中密码学漏洞条目
-python crawlers/sync_data_light.py --repos nvd
-```
 
 ---
 
@@ -114,7 +63,6 @@ python crawlers/sync_data_light.py --repos nvd
 | 缺口感知补全 | 从失败根因反推知识盲区并触发爬取 | 闭环成长 |
 | RAGFlow 回流 | 融合后的高价值经验自动上传向量库 | 直接服务检索 |
 | Dashboard 可视化 | 经验浏览、会话分析、任务管理、缺口补全 | 运维与运营一体化 |
-| **密码攻防专项支持** | 口令爆破、哈希破解、协议降级、Kerberos 攻击、弱密码学算法利用 | 密码相关渗透提效 |
 
 ---
 
@@ -143,13 +91,13 @@ graph TD
 
 ## 知识层模型
 
-| 层级 | 枚举值 | 通用举例 | 密码相关举例 |
-|---|---|---|---|
-| 事实层 | FACTUAL | CVE、受影响版本、利用前置条件 | CVE-2014-3566（POODLE）、TLS 1.0 受影响版本、RC4 弃用说明 |
-| 正向步骤层 | PROCEDURAL_POS | 成功命令序列、验证信号、适用约束 | Kerberoasting 票据提取命令、hashcat -m 13100 破解流程、mitmproxy 证书注入步骤 |
-| 负向步骤层 | PROCEDURAL_NEG | 失败命令、报错、根因、避坑策略 | hashcat 规则匹配率为零的根因、SSL pinning 绕过失败记录、AS-REP Roasting 无结果原因 |
-| 元认知层 | METACOGNITIVE | 决策规则、策略迁移、经验法则 | 「先喷洒再定向爆破」策略、密码策略侦察优先级判断、协议版本嗅探决策树 |
-| 概念层 | CONCEPTUAL | 攻击原理、工具机制、抽象模式 | CBC 字节翻转原理、RSA 共模攻击数学推导、Padding Oracle 工作机制 |
+| 层级 | 枚举值 | 通用举例 |
+|---|---|---|
+| 事实层 | FACTUAL | CVE、受影响版本、利用前置条件 |
+| 正向步骤层 | PROCEDURAL_POS | 成功命令序列、验证信号、适用约束 |
+| 负向步骤层 | PROCEDURAL_NEG | 失败命令、报错、根因、避坑策略 |
+| 元认知层 | METACOGNITIVE | 决策规则、策略迁移、经验法则 |
+| 概念层 | CONCEPTUAL | 攻击原理、工具机制、抽象模式 |
 
 ---
 
@@ -262,11 +210,6 @@ python -m src.ragflow.uploader --source fused --exp-ids exp_consolidated_xxx,exp
 python crawlers/main_crawler.py --all -q "CVE-2024-xxxx" --yes
 python crawlers/main_crawler.py --sources csdn,github -q "WebLogic 反序列化" --max-pages 8
 
-# 密码学 / 口令攻击专项
-python crawlers/main_crawler.py --all -q "Kerberoasting NTLM relay" --yes
-python crawlers/main_crawler.py --sources github -q "hashcat rules WPA2 crack" --max-pages 10
-python crawlers/main_crawler.py --sources csdn,qianxin -q "TLS 降级 BEAST POODLE" --max-pages 6
-python crawlers/main_crawler.py --sources github -q "JWT algorithm confusion RS256 HS256" --max-pages 8
 ```
 
 ### 外部知识库同步
