@@ -102,7 +102,7 @@ def download_repo_snapshot(url, dest_dir, branch="main", is_gitlab=False):
     dest_path.mkdir(exist_ok=True, parents=True)
 
     try:
-        response = requests.get(snapshot_url, stream=True)
+        response = requests.get(snapshot_url, stream=True, timeout=30)
         response.raise_for_status()
         
         with tempfile.TemporaryDirectory() as tmpdirname:
